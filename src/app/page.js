@@ -4,19 +4,25 @@ import { useState } from 'react';
 import VideoInfo from '../components/VideoInfo';
 import DownloadButton from '../components/DownloadButton';
 
+/**
+ * 메인 페이지 컴포넌트
+ * - YouTube URL 입력 → 영상 정보 조회 → 포맷 선택 → 다운로드
+ * - MP3(오디오), MP4 720p, MP4 1080p 세 가지 다운로드 지원
+ */
 export default function Home() {
-  const [url, setUrl] = useState('');
-  const [info, setInfo] = useState(null);
-  const [loadingInfo, setLoadingInfo] = useState(false);
-  const [loadingAudio, setLoadingAudio] = useState(false);
-  const [loadingVideo, setLoadingVideo] = useState(false);
-  const [loadingVideo1080p, setLoadingVideo1080p] = useState(false);
-  const [error, setError] = useState('');
-  const [selectedFormat, setSelectedFormat] = useState('');
-  // New states for audio and video format selection
-  const [selectedAudio, setSelectedAudio] = useState('');
-  const [selectedVideo, setSelectedVideo] = useState('');
+  // ─── 상태(state) 관리 ──────────────────────────────────────────
+  const [url, setUrl] = useState('');                    // 사용자가 입력한 YouTube URL
+  const [info, setInfo] = useState(null);                 // 영상 메타데이터 (제목, 포맷 등)
+  const [loadingInfo, setLoadingInfo] = useState(false);  // 정보 조회 중 여부
+  const [loadingAudio, setLoadingAudio] = useState(false); // MP3 다운로드 중 여부
+  const [loadingVideo, setLoadingVideo] = useState(false); // MP4 720p 다운로드 중 여부
+  const [loadingVideo1080p, setLoadingVideo1080p] = useState(false); // MP4 1080p 다운로드 중 여부
+  const [error, setError] = useState('');                 // 에러 메시지
+  const [selectedFormat, setSelectedFormat] = useState(''); // 통합 선택 포맷 ID
+  const [selectedAudio, setSelectedAudio] = useState('');  // 선택된 오디오 포맷 ID
+  const [selectedVideo, setSelectedVideo] = useState('');  // 선택된 비디오 포맷 ID
 
+  // ─── 영상 정보 조회 ────────────────────────────────────────────
   const fetchInfo = async () => {
     if (!url) {
       setError('Please enter a YouTube URL');
@@ -37,7 +43,7 @@ export default function Home() {
       if (data.formats && data.formats.length > 0) {
         setSelectedFormat(data.formats[0].format_id);
         
-        // Also set defaults for the split selectors
+        // 오디오/비디오 각각 첫 번째 포맷을 기본 선택
         const audio = data.formats.find(f => f.type === 'audio');
         const video = data.formats.find(f => f.type === 'video');
         if (audio) setSelectedAudio(audio.format_id);
@@ -50,6 +56,7 @@ export default function Home() {
     }
   };
 
+  // ─── MP3 다운로드 ──────────────────────────────────────────────
   const handleDownloadAudio = async () => {
     if (!url || !selectedAudio) return;
     
@@ -68,7 +75,7 @@ export default function Home() {
         throw new Error(data.error || 'Download failed');
       }
       
-      // Blob download
+      // Blob 형태로 응답을 받아 브라우저 다운로드 트리거
       const blob = await res.blob();
       const downloadUrl = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -87,6 +94,7 @@ export default function Home() {
     }
   };
 
+  // ─── MP4 720p 다운로드 ─────────────────────────────────────────
   const handleDownloadVideo = async () => {
     if (!url) return;
     
@@ -103,7 +111,6 @@ export default function Home() {
         throw new Error(data.error || 'Download failed');
       }
       
-      // Blob download
       const blob = await res.blob();
       const downloadUrl = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -122,6 +129,7 @@ export default function Home() {
     }
   };
 
+  // ─── MP4 1080p 다운로드 ────────────────────────────────────────
   const handleDownloadVideo1080p = async () => {
     if (!url) return;
     
@@ -138,7 +146,6 @@ export default function Home() {
         throw new Error(data.error || 'Download failed');
       }
       
-      // Blob download
       const blob = await res.blob();
       const downloadUrl = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -157,11 +164,13 @@ export default function Home() {
     }
   };
 
+  // ─── UI 렌더링 ─────────────────────────────────────────────────
   return (
     <div className="container">
       <div className="glass-panel">
         <h1>YouTube to MP3 / MP4</h1>
         
+        {/* URL 입력 + 분석 버튼 */}
         <div className="input-group">
           <input 
             type="text" 
@@ -177,6 +186,7 @@ export default function Home() {
         
         {error && <p className="error-message">{error}</p>}
         
+        {/* 영상 정보 + 포맷 선택 + 다운로드 버튼 */}
         {info && (
           <>
             <VideoInfo 

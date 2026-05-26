@@ -3,6 +3,13 @@ import youtubedl from 'youtube-dl-exec';
 import fs from 'fs';
 import path from 'path';
 
+/**
+ * POST /api/download
+ * MP3 오디오 다운로드 (JSON body: { url, format_id })
+ * 
+ * POST 대신 GET 방식으로도 호출 가능:
+ *   GET /api/download?url=...&format_id=...
+ */
 export async function POST(request) {
   try {
     const { url, format_id } = await request.json();
@@ -11,6 +18,7 @@ export async function POST(request) {
       return NextResponse.json({ error: 'URL is required' }, { status: 400 });
     }
 
+    // 임시 저장 디렉토리 확인/생성
     const tempDir = path.join(process.cwd(), 'tmp');
     if (!fs.existsSync(tempDir)) {
       fs.mkdirSync(tempDir, { recursive: true });
@@ -19,21 +27,23 @@ export async function POST(request) {
     const ffmpegPath = path.join(process.cwd(), 'node_modules', 'ffmpeg-static', 'ffmpeg');
     const tempPath = path.join(tempDir, `${Date.now()}.${format_id}.mp3`);
     
+    // yt-dlp로 오디오 추출 및 MP3 변환
     await youtubedl(url, {
-      format: format_id,
-      output: tempPath,
+      format: format_id,               // 클라이언트가 선택한 포맷 ID
+      output: tempPath,                // 다운로드 경로
       noCheckCertificate: true,
       noWarnings: true,
       noPlaylist: true,
-      extractAudio: true,
-      audioFormat: 'mp3',
-      ffmpegLocation: ffmpegPath,
+      extractAudio: true,              // 오디오만 추출
+      audioFormat: 'mp3',              // MP3 형식으로 변환
+      ffmpegLocation: ffmpegPath,      // ffmpeg 경로 (스트림 병합/변환용)
     });
 
     if (!fs.existsSync(tempPath)) {
       throw new Error('File was not created');
     }
 
+    // 생성된 파일을 스트리밍 응답으로 전송
     const stat = await fs.promises.stat(tempPath);
     const fileStream = fs.createReadStream(tempPath);
     
@@ -49,6 +59,10 @@ export async function POST(request) {
   }
 }
 
+/**
+ * GET /api/download?url=...&format_id=...
+ * POST와 동일한 기능을 GET 방식으로 제공
+ */
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const url = searchParams.get('url');

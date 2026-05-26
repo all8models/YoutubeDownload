@@ -1,23 +1,27 @@
+/* ─── CSS 변수 (색상, 유리 효과, 그림자) ─────────────────────── */
 :root {
-  --bg-color: #0f172a;
-  --text-color: #f8fafc;
-  --accent-color: #3b82f6;
-  --accent-hover: #2563eb;
-  --glass-bg: rgba(30, 41, 59, 0.7);
-  --glass-border: rgba(255, 255, 255, 0.1);
-  --glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
-  --error-color: #ef4444;
+  --bg-color: #0f172a;           /* 딥 블루 배경 */
+  --text-color: #f8fafc;         /* 밝은 텍스트 */
+  --accent-color: #3b82f6;       /* 강조 색상 (파랑) */
+  --accent-hover: #2563eb;       /* 호버 시 더 진한 파랑 */
+  --glass-bg: rgba(30, 41, 59, 0.7);    /* 유리 효과 배경 */
+  --glass-border: rgba(255, 255, 255, 0.1); /* 유리 효과 테두리 */
+  --glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37); /* 그림자 */
+  --error-color: #ef4444;       /* 에러 메시지 빨강 */
 }
 
+/* ─── 리셋 ──────────────────────────────────────────────────── */
 * {
   box-sizing: border-box;
   padding: 0;
   margin: 0;
 }
 
+/* ─── 바디: 그라데이션 배경 + 중앙 정렬 ──────────────────────── */
 body {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
   background-color: var(--bg-color);
+  /* 3색 그라데이션 배경 (좌측 상단부터) */
   background-image: 
     radial-gradient(at 0% 0%, hsla(253,16%,7%,1) 0, transparent 50%), 
     radial-gradient(at 50% 0%, hsla(225,39%,30%,1) 0, transparent 50%), 
@@ -31,6 +35,7 @@ body {
   justify-content: center;
 }
 
+/* ─── 컨테이너 ───────────────────────────────────────────────── */
 .container {
   width: 100%;
   max-width: 800px;
@@ -38,9 +43,10 @@ body {
   margin: 0 auto;
 }
 
+/* ─── 유리 효과(Glassmorphism) 패널 ──────────────────────────── */
 .glass-panel {
   background: var(--glass-bg);
-  backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);         /* 배경 블러 처리 */
   -webkit-backdrop-filter: blur(12px);
   border: 1px solid var(--glass-border);
   border-radius: 16px;
@@ -50,31 +56,35 @@ body {
 }
 
 .glass-panel:hover {
-  transform: translateY(-2px);
+  transform: translateY(-2px);         /* 호버 시 살짝 떠오름 */
   box-shadow: 0 12px 40px 0 rgba(0, 0, 0, 0.45);
 }
 
+/* ─── 제목 (그라데이션 텍스트) ────────────────────────────────── */
 h1 {
   font-size: 2.5rem;
   font-weight: 800;
   text-align: center;
   margin-bottom: 2rem;
+  /* 파랑 → 보라 → 분홍 그라데이션 */
   background: linear-gradient(to right, #3b82f6, #8b5cf6, #ec4899);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
 
+/* ─── URL 입력 그룹 ──────────────────────────────────────────── */
 .input-group {
   display: flex;
   gap: 1rem;
   margin-bottom: 2rem;
 }
 
+/* ─── 텍스트 입력창 ──────────────────────────────────────────── */
 input[type="text"] {
   flex: 1;
   padding: 1rem 1.5rem;
-  border-radius: 9999px;
+  border-radius: 9999px;               /* 완전 둥근 모서리 */
   border: 1px solid var(--glass-border);
   background: rgba(15, 23, 42, 0.6);
   color: var(--text-color);
@@ -88,6 +98,7 @@ input[type="text"]:focus {
   box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.3);
 }
 
+/* ─── 기본 버튼 ──────────────────────────────────────────────── */
 button {
   padding: 1rem 2rem;
   border-radius: 9999px;
@@ -110,11 +121,12 @@ button:hover {
 }
 
 button:disabled {
-  background-color: #64748b;
+  background-color: #64748b;           /* 비활성화 시 회색 */
   cursor: not-allowed;
   transform: none;
 }
 
+/* ─── 비디오 정보 영역 ───────────────────────────────────────── */
 .video-info {
   display: flex;
   flex-direction: column;
@@ -128,7 +140,7 @@ button:disabled {
   border-radius: 12px;
   overflow: hidden;
   position: relative;
-  aspect-ratio: 16/9;
+  aspect-ratio: 16/9;                  /* 16:9 비율 유지 */
 }
 
 .thumbnail-container img {
@@ -143,10 +155,11 @@ button:disabled {
 }
 
 .video-details p {
-  color: #94a3b8;
+  color: #94a3b8;                     /* 회색 부가 정보 */
   margin-bottom: 1.5rem;
 }
 
+/* ─── 포맷 선택 그룹 ──────────────────────────────────────────── */
 .format-group {
   margin-bottom: 1.25rem;
 }
@@ -157,7 +170,7 @@ button:disabled {
   font-weight: 600;
   color: #94a3b8;
   margin-bottom: 0.4rem;
-  text-transform: uppercase;
+  text-transform: uppercase;          /* 대문자 레이블 */
   letter-spacing: 0.5px;
 }
 
@@ -177,11 +190,13 @@ button:disabled {
   border-color: var(--accent-color);
 }
 
+/* ─── 애니메이션 ──────────────────────────────────────────────── */
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
+/* ─── 로딩 스피너 ────────────────────────────────────────────── */
 .loader {
   border: 3px solid rgba(255, 255, 255, 0.1);
   border-top: 3px solid white;
@@ -196,6 +211,7 @@ button:disabled {
   100% { transform: rotate(360deg); }
 }
 
+/* ─── 에러 메시지 ────────────────────────────────────────────── */
 .error-message {
   color: var(--error-color);
   text-align: center;
