@@ -1,51 +1,92 @@
 import { NextResponse } from 'next/server';
 import youtubedl from 'youtube-dl-exec';
+import fs from 'fs';
+import path from 'path';
 
 export async function POST(request) {
   try {
-    const body = await request.json();
-    const { url, format_id } = body;
+    const { url, format_id } = await request.json();
 
     if (!url) {
       return NextResponse.json({ error: 'URL is required' }, { status: 400 });
     }
 
-    const args = {
-      extractAudio: true,
-      audioFormat: 'mp3',
-      format: format_id || 'bestaudio',
+    const tempDir = path.join(process.cwd(), 'tmp');
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true });
+    }
+
+    const ffmpegPath = path.join(process.cwd(), 'node_modules', 'ffmpeg-static', 'ffmpeg');
+    const tempPath = path.join(tempDir, `${Date.now()}.${format_id}.mp3`);
+    
+    await youtubedl(url, {
+      format: format_id,
+      output: tempPath,
       noCheckCertificate: true,
       noWarnings: true,
-      addHeader: ['referer:youtube.com', 'user-agent:Mozilla/5.0'],
-      o: '-' // Output to stdout
-    };
-
-    const ytDlpProcess = youtubedl.exec(url, args, { stdio: ['ignore', 'pipe', 'ignore'] });
-    
-    // Convert Node stream to Web ReadableStream
-    const stream = new ReadableStream({
-      start(controller) {
-        ytDlpProcess.stdout.on('data', (chunk) => {
-          controller.enqueue(chunk);
-        });
-        ytDlpProcess.stdout.on('end', () => {
-          controller.close();
-        });
-        ytDlpProcess.stdout.on('error', (err) => {
-          controller.error(err);
-        });
-      },
-      cancel() {
-        ytDlpProcess.kill();
-      }
+      noPlaylist: true,
+      extractAudio: true,
+      audioFormat: 'mp3',
+      ffmpegLocation: ffmpegPath,
     });
 
+    if (!fs.existsSync(tempPath)) {
+      throw new Error('File was not created');
+    }
+
+    const stat = await fs.promises.stat(tempPath);
+    const fileStream = fs.createReadStream(tempPath);
+    
     const headers = new Headers();
     headers.set('Content-Type', 'audio/mpeg');
-    // Using a generic filename since yt-dlp stdout doesn't give us the parsed title easily in this stream
-    headers.set('Content-Disposition', 'attachment; filename="download.mp3"');
+    headers.set('Content-Disposition', `attachment; filename="download.mp3"`);
+    headers.set('Content-Length', stat.size.toString());
 
-    return new NextResponse(stream, { headers });
+    return new NextResponse(fileStream, { headers });
+  } catch (error) {
+    console.error('Download error:', error);
+    return NextResponse.json({ error: 'Failed to download' }, { status: 500 });
+  }
+}
+
+export async function GET(request) {
+  const { searchParams } = new URL(request.url);
+  const url = searchParams.get('url');
+  const format_id = searchParams.get('format_id');
+
+  if (!url || !format_id) {
+    return NextResponse.json({ error: 'URL and format_id are required' }, { status: 400 });
+  }
+
+  try {
+    const tempDir = path.join(process.cwd(), 'tmp');
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true });
+    }
+
+    const ffmpegPath = path.join(process.cwd(), 'node_modules', 'ffmpeg-static', 'ffmpeg');
+    const tempPath = path.join(tempDir, `${Date.now()}.${format_id}.mp3`);
+    
+    await youtubedl(url, {
+      format: format_id,
+      output: tempPath,
+      noCheckCertificate: true,
+      noWarnings: true,
+      noPlaylist: true,
+      extractAudio: true,
+      audioFormat: 'mp3',
+      ffmpegLocation: ffmpegPath,
+    });
+
+    const stat = await fs.promises.stat(tempPath);
+    const fileStream = fs.createReadStream(tempPath);
+    
+    const headers = new Headers();
+    headers.set('Content-Type', 'audio/mpeg');
+    headers.set('Content-Disposition', `attachment; filename="download.mp3"`);
+    headers.set('Content-Length', stat.size.toString());
+
+    return new NextResponse(fileStream, { headers });
   } catch (error) {
     console.error('Download error:', error);
     return NextResponse.json({ error: 'Failed to download' }, { status: 500 });

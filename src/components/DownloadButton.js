@@ -1,13 +1,13 @@
-export default function DownloadButton({ onClick, isLoading }) {
+export default function DownloadButton({ onClick, isLoading, label = 'Download' }) {
   return (
-    <button onClick={onClick} disabled={isLoading}>
+    <button onClick={onClick} disabled={isLoading} className="download-btn">
       {isLoading ? (
         <>
-          <div className="loader"></div>
+          <div className="loader" />
           Downloading...
         </>
       ) : (
-        'Download MP3'
+        label
       )}
     </button>
   );
