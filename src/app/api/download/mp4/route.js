@@ -8,21 +8,25 @@ import { promisify } from 'util';
 const pipe = promisify(pipeline);
 
 /**
- * GET /api/download/mp4?url=VIDEO_URL
- * Returns a merged MP4 file (video + audio) at best quality up to 720p.
+ * GET /api/download/mp4?url=VIDEO_URL&quality=720
+ * Returns a merged MP4 file (video + audio) at the specified quality (720 or 1080).
  */
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const url = searchParams.get('url');
+  const quality = parseInt(searchParams.get('quality') || '720', 10);
   if (!url) {
     return NextResponse.json({ error: 'URL is required' }, { status: 400 });
   }
 
+  const supportedQualities = [720, 1080];
+  const targetQuality = supportedQualities.includes(quality) ? quality : 720;
+
   try {
     const ffmpegPath = path.join(process.cwd(), 'node_modules', 'ffmpeg-static', 'ffmpeg');
     
-    // Define format selector: best video <=720p plus best audio, fallback to best overall <=720p
-    const format = 'bestvideo[height<=720]+bestaudio/best[height<=720]';
+    // Define format selector based on quality
+    const format = `bestvideo[height<=${targetQuality}]+bestaudio/best[height<=${targetQuality}]`;
     const tempPath = path.join(process.cwd(), 'tmp', `${Date.now()}.mp4`);
     
     await youtubedl(url, {

@@ -10,6 +10,7 @@ export default function Home() {
   const [loadingInfo, setLoadingInfo] = useState(false);
   const [loadingAudio, setLoadingAudio] = useState(false);
   const [loadingVideo, setLoadingVideo] = useState(false);
+  const [loadingVideo1080p, setLoadingVideo1080p] = useState(false);
   const [error, setError] = useState('');
   const [selectedFormat, setSelectedFormat] = useState('');
   // New states for audio and video format selection
@@ -93,8 +94,7 @@ export default function Home() {
     setError('');
     
     try {
-      // The mp4 route uses a GET request and handles format internally
-      const res = await fetch(`/api/download/mp4?url=${encodeURIComponent(url)}`, {
+      const res = await fetch(`/api/download/mp4?url=${encodeURIComponent(url)}&quality=720`, {
         method: 'GET',
       });
       
@@ -119,6 +119,41 @@ export default function Home() {
       setError(err.message);
     } finally {
       setLoadingVideo(false);
+    }
+  };
+
+  const handleDownloadVideo1080p = async () => {
+    if (!url) return;
+    
+    setLoadingVideo1080p(true);
+    setError('');
+    
+    try {
+      const res = await fetch(`/api/download/mp4?url=${encodeURIComponent(url)}&quality=1080`, {
+        method: 'GET',
+      });
+      
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({ error: 'Download failed' }));
+        throw new Error(data.error || 'Download failed');
+      }
+      
+      // Blob download
+      const blob = await res.blob();
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = downloadUrl;
+      const safeTitle = info?.title ? info.title.replace(/[/\\?%*:|"<>]/g, '-') : 'video';
+      a.download = `${safeTitle}_1080p.mp4`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(downloadUrl);
+      
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoadingVideo1080p(false);
     }
   };
 
@@ -157,9 +192,10 @@ export default function Home() {
                 setSelectedFormat(val);
               }} 
             />
-            <div style={{ marginTop: '1.5rem', display: 'flex', justifyContent: 'center', gap: '1rem' }}>
+            <div style={{ marginTop: '1.5rem', display: 'flex', justifyContent: 'center', gap: '1rem', flexWrap: 'wrap' }}>
               <DownloadButton onClick={handleDownloadAudio} isLoading={loadingAudio} label="Download MP3" />
-              <DownloadButton onClick={handleDownloadVideo} isLoading={loadingVideo} label="Download MP4" />
+              <DownloadButton onClick={handleDownloadVideo} isLoading={loadingVideo} label="MP4 (720p)" />
+              <DownloadButton onClick={handleDownloadVideo1080p} isLoading={loadingVideo1080p} label="MP4 (1080p)" />
             </div>
           </>
         )}

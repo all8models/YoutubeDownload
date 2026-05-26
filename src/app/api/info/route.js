@@ -30,9 +30,9 @@ export async function GET(request) {
         abr: f.abr,
       }));
 
-    // Video formats (MP4 up to 720p)
+    // Video formats (MP4 up to 1080p)
     const videoFormats = info.formats
-      .filter((f) => f.vcodec !== 'none' && f.ext === 'mp4' && (f.height || 0) <= 720)
+      .filter((f) => f.vcodec !== 'none' && f.ext === 'mp4' && (f.height || 0) <= 1080)
       .map((f) => ({
         quality: `${f.height}p`,
         type: 'video',
