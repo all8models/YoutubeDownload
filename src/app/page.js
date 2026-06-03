@@ -189,6 +189,11 @@ export default function Home() {
         {/* 영상 정보 + 포맷 선택 + 다운로드 버튼 */}
         {info && (
           <>
+            <div style={{ marginBottom: '1.5rem', display: 'flex', justifyContent: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+              <DownloadButton onClick={handleDownloadAudio} isLoading={loadingAudio} label="Download MP3" />
+              <DownloadButton onClick={handleDownloadVideo} isLoading={loadingVideo} label="MP4 (720p)" />
+              <DownloadButton onClick={handleDownloadVideo1080p} isLoading={loadingVideo1080p} label="MP4 (1080p)" />
+            </div>
             <VideoInfo 
               info={info} 
               selectedAudio={selectedAudio} 
@@ -202,11 +207,6 @@ export default function Home() {
                 setSelectedFormat(val);
               }} 
             />
-            <div style={{ marginTop: '1.5rem', display: 'flex', justifyContent: 'center', gap: '1rem', flexWrap: 'wrap' }}>
-              <DownloadButton onClick={handleDownloadAudio} isLoading={loadingAudio} label="Download MP3" />
-              <DownloadButton onClick={handleDownloadVideo} isLoading={loadingVideo} label="MP4 (720p)" />
-              <DownloadButton onClick={handleDownloadVideo1080p} isLoading={loadingVideo1080p} label="MP4 (1080p)" />
-            </div>
           </>
         )}
       </div>
