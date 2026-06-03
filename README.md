@@ -98,6 +98,15 @@ docker run -d -p 3000:3000 --name youtube-download-service youtube-download
 ```
 - 컨테이너가 정상적으로 실행되면 브라우저에서 `http://localhost:3000`으로 접속하여 서비스를 이용할 수 있습니다.
 
+### 3. 도커 서비스 정지 및 정리
+사용이 끝난 후 컨테이너를 중지하고 정리하려면 아래 명령어를 사용합니다.
+```bash
+docker stop youtube-download-service
+docker rm youtube-download-service
+docker rmi youtube-download
+```
+
+
 ---
 
 ## ⚠️ 주의사항
