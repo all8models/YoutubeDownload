@@ -44,3 +44,8 @@ next-env.d.ts
 
 # temp files
 /tmp/
+
+# project docs & test scripts (local only)
+기능추가.md
+test-ytdl.js
+test-ffmpeg.js
