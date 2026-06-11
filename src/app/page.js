@@ -3,10 +3,22 @@
 import { useState } from 'react';
 import VideoInfo from '../components/VideoInfo';
 import DownloadButton from '../components/DownloadButton';
+import PlaylistView from '../components/PlaylistView';
+import DownloadFolderPicker from '../components/DownloadFolderPicker';
+import { chooseDownloadDirectory, saveFile } from '../lib/fileDownload';
+
+/**
+ * URL이 YouTube 플레이리스트인지 확인
+ * URL에 'list=' 파라미터가 포함되어 있으면 플레이리스트로 간주
+ */
+function isPlaylistUrl(url) {
+  return url.includes('list=');
+}
 
 /**
  * 메인 페이지 컴포넌트
  * - YouTube URL 입력 → 영상 정보 조회 → 포맷 선택 → 다운로드
+ * - 플레이리스트 URL이면 → 영상 목록 표시 → 개별 다운로드
  * - MP3(오디오), MP4 720p, MP4 1080p 세 가지 다운로드 지원
  */
 export default function Home() {
@@ -21,28 +33,55 @@ export default function Home() {
   const [selectedFormat, setSelectedFormat] = useState(''); // 통합 선택 포맷 ID
   const [selectedAudio, setSelectedAudio] = useState('');  // 선택된 오디오 포맷 ID
   const [selectedVideo, setSelectedVideo] = useState('');  // 선택된 비디오 포맷 ID
+  const [playlistData, setPlaylistData] = useState(null);  // 플레이리스트 정보
+  const [downloadDirHandle, setDownloadDirHandle] = useState(null); // 자동 저장 폴더 핸들
 
-  // ─── 영상 정보 조회 ────────────────────────────────────────────
+  // ─── 다운로드 폴더 선택 (File System Access API) ──────────────────
+  const handleChooseFolder = async () => {
+    const handle = await chooseDownloadDirectory();
+    if (handle) setDownloadDirHandle(handle);
+  };
+
+  // ─── 분석 버튼 클릭: URL 타입에 따라 단일 영상 / 플레이리스트 분기 ──
   const fetchInfo = async () => {
     if (!url) {
       setError('Please enter a YouTube URL');
       return;
     }
-    
+
     setError('');
     setLoadingInfo(true);
     setInfo(null);
-    
+    setPlaylistData(null);
+
+    // 플레이리스트 URL이면 플레이리스트 API 호출
+    if (isPlaylistUrl(url)) {
+      try {
+        const res = await fetch(`/api/playlist?url=${encodeURIComponent(url)}`);
+        const data = await res.json();
+
+        if (!res.ok) throw new Error(data.error || 'Failed to fetch playlist info');
+
+        setPlaylistData(data);
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        setLoadingInfo(false);
+      }
+      return;
+    }
+
+    // ─── 단일 영상: 기존 info API 호출 ──────────────────────────
     try {
       const res = await fetch(`/api/info?url=${encodeURIComponent(url)}`);
       const data = await res.json();
-      
+
       if (!res.ok) throw new Error(data.error || 'Failed to fetch video info');
-      
+
       setInfo(data);
       if (data.formats && data.formats.length > 0) {
         setSelectedFormat(data.formats[0].format_id);
-        
+
         // 오디오/비디오 각각 첫 번째 포맷을 기본 선택
         const audio = data.formats.find(f => f.type === 'audio');
         const video = data.formats.find(f => f.type === 'video');
@@ -75,17 +114,10 @@ export default function Home() {
         throw new Error(data.error || 'Download failed');
       }
       
-      // Blob 형태로 응답을 받아 브라우저 다운로드 트리거
+      // Blob → 자동 저장 (폴더 선택 시) 또는 브라우저 다운로드
       const blob = await res.blob();
-      const downloadUrl = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = downloadUrl;
       const safeTitle = info?.title ? info.title.replace(/[/\\?%*:|"<>]/g, '-') : 'audio';
-      a.download = `${safeTitle}.mp3`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(downloadUrl);
+      await saveFile(blob, `${safeTitle}.mp3`, downloadDirHandle);
       
     } catch (err) {
       setError(err.message);
@@ -112,15 +144,8 @@ export default function Home() {
       }
       
       const blob = await res.blob();
-      const downloadUrl = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = downloadUrl;
       const safeTitle = info?.title ? info.title.replace(/[/\\?%*:|"<>]/g, '-') : 'video';
-      a.download = `${safeTitle}.mp4`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(downloadUrl);
+      await saveFile(blob, `${safeTitle}.mp4`, downloadDirHandle);
       
     } catch (err) {
       setError(err.message);
@@ -147,15 +172,8 @@ export default function Home() {
       }
       
       const blob = await res.blob();
-      const downloadUrl = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = downloadUrl;
       const safeTitle = info?.title ? info.title.replace(/[/\\?%*:|"<>]/g, '-') : 'video';
-      a.download = `${safeTitle}_1080p.mp4`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(downloadUrl);
+      await saveFile(blob, `${safeTitle}_1080p.mp4`, downloadDirHandle);
       
     } catch (err) {
       setError(err.message);
@@ -166,7 +184,7 @@ export default function Home() {
 
   // ─── UI 렌더링 ─────────────────────────────────────────────────
   return (
-    <div className="container">
+    <div className={`container ${playlistData ? 'container-wide' : ''}`}>
       <div className="glass-panel">
         <h1>YouTube to MP3 / MP4</h1>
         
@@ -186,8 +204,19 @@ export default function Home() {
         
         {error && <p className="error-message">{error}</p>}
         
-        {/* 영상 정보 + 포맷 선택 + 다운로드 버튼 */}
-        {info && (
+        {/* 다운로드 폴더 선택 버튼 */}
+        <DownloadFolderPicker 
+          onSelect={handleChooseFolder} 
+          selected={!!downloadDirHandle} 
+        />
+        
+        {/* 플레이리스트 모드: 영상 목록 + 개별 다운로드 버튼 */}
+        {playlistData && (
+          <PlaylistView playlistData={playlistData} downloadDirHandle={downloadDirHandle} />
+        )}
+        
+        {/* 단일 영상 모드: 영상 정보 + 포맷 선택 + 다운로드 버튼 */}
+        {info && !playlistData && (
           <>
             <div style={{ marginBottom: '1.5rem', display: 'flex', justifyContent: 'center', gap: '1rem', flexWrap: 'wrap' }}>
               <DownloadButton onClick={handleDownloadAudio} isLoading={loadingAudio} label="Download MP3" />

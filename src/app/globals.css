@@ -218,3 +218,185 @@ button:disabled {
   margin-top: 1rem;
   font-weight: 500;
 }
+
+/* ─── 다운로드 폴더 선택 버튼 ────────────────────────────────── */
+.folder-picker {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 0.75rem;
+}
+
+.folder-picker-btn {
+  background: rgba(34, 197, 94, 0.15);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  color: #4ade80;
+  font-size: 0.85rem;
+  padding: 0.5rem 1.25rem;
+  border-radius: 9999px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.folder-picker-btn:hover {
+  background: rgba(34, 197, 94, 0.25);
+  border-color: rgba(34, 197, 94, 0.5);
+  transform: translateY(-1px);
+}
+
+/* ─── 플레이리스트 컨테이너 (더 넓은 레이아웃) ────────────────── */
+.container-wide {
+  max-width: 1100px;
+}
+
+/* ─── 플레이리스트 전체 영역 ──────────────────────────────────── */
+.playlist-view {
+  margin-top: 1.5rem;
+  animation: fadeIn 0.5s ease;
+}
+
+/* ─── 플레이리스트 헤더 (제목 + 영상 개수) ────────────────────── */
+.playlist-header {
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.playlist-title {
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: var(--text-color);
+  background: linear-gradient(to right, #60a5fa, #a78bfa);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.playlist-count {
+  font-size: 0.9rem;
+  color: #94a3b8;
+  background: rgba(148, 163, 184, 0.15);
+  padding: 0.2rem 0.8rem;
+  border-radius: 9999px;
+}
+
+/* ─── 영상 목록 (스크롤 가능) ─────────────────────────────────── */
+.playlist-videos {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  max-height: 70vh;
+  overflow-y: auto;
+  padding-right: 0.5rem;
+  /* 스크롤바 스타일 */
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.3) transparent;
+}
+
+.playlist-videos::-webkit-scrollbar {
+  width: 6px;
+}
+
+.playlist-videos::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.playlist-videos::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.3);
+  border-radius: 3px;
+}
+
+/* ─── 개별 영상 카드 ──────────────────────────────────────────── */
+.playlist-video-item {
+  display: flex;
+  gap: 1rem;
+  padding: 0.75rem !important;
+  border-radius: 12px !important;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  align-items: center;
+}
+
+.playlist-video-item:hover {
+  transform: translateX(4px);
+  box-shadow: 0 4px 20px rgba(59, 130, 246, 0.15) !important;
+}
+
+/* ─── 썸네일 ──────────────────────────────────────────────────── */
+.playlist-thumbnail {
+  width: 160px;
+  min-width: 160px;
+  height: 90px;
+  object-fit: cover;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.5);
+}
+
+/* ─── 영상 정보 영역 ──────────────────────────────────────────── */
+.playlist-video-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.playlist-video-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-color);
+  /* 긴 제목은 말줄임표 처리 */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.playlist-video-duration {
+  font-size: 0.8rem;
+  color: #94a3b8;
+}
+
+/* ─── 다운로드 버튼 그룹 ──────────────────────────────────────── */
+.playlist-download-buttons {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.25rem;
+}
+
+.playlist-download-buttons button {
+  padding: 0.4rem 1rem;
+  font-size: 0.8rem;
+  border-radius: 8px;
+}
+
+/* ─── 반응형: 작은 화면에서 썸네일 숨기고 세로 정렬 ────────────── */
+@media (max-width: 640px) {
+  .playlist-video-item {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .playlist-thumbnail {
+    width: 100%;
+    min-width: 100%;
+    height: auto;
+    aspect-ratio: 16/9;
+  }
+
+  .playlist-video-title {
+    white-space: normal;
+  }
+
+  .playlist-download-buttons {
+    width: 100%;
+  }
+
+  .playlist-download-buttons button {
+    flex: 1;
+    justify-content: center;
+  }
+}
