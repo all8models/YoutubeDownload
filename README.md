@@ -151,3 +151,45 @@ docker compose down
 ## ⚠️ 주의사항
 - 본 프로젝트를 퍼블릭 서버에 배포할 경우 여러 사용자의 동시 변환 요청(특히 MP4 병합)으로 인해 서버의 CPU/RAM 리소스가 급격히 소모될 수 있습니다.
 - 다운로드 과정에서 생성되는 `tmp/` 폴더 내의 임시 파일들은 현재 스트리밍 완료 후 자동 삭제 로직이 완벽히 적용되어 있지 않으므로, 실 서비스 시에는 주기적인 `tmp/` 폴더 초기화 스크립트 설정이 필요합니다.
+
+---
+
+## 🚨 알려진 이슈: YouTube HTTP 503 Rate Limiting
+
+### 발생 상황 (2026-06-11)
+- 한 세션에서 **40개의 다운로드 버튼을 연속 클릭**하여 다운로드를 시도함.
+- 약 30~40회차 다운로드 진행 중, YouTube 서버가 **HTTP 503 (Service Unavailable)** 응답을 반환하기 시작함.
+
+### 상세 로그
+```
+[download] Got error: HTTP Error 503: Service Unavailable. Retrying (1/10)...
+[download] Got error: HTTP Error 503: Service Unavailable. Retrying (2/10)...
+...
+[download] Got error: HTTP Error 503: Service Unavailable. Giving up after 10 retries
+```
+
+- 다운로드가 약 **86.7%** 진행된 상태에서 503 오류 발생
+- yt-dlp가 자체적으로 10회 재시도했으나 모두 실패
+- 오류 발생 명령어: `yt-dlp`가 `--no-check-certificate` 옵션으로 실행됨
+
+### 원인
+- **YouTube의 Rate Limiting (속도 제한)**: 짧은 시간 내 대량의 다운로드 요청이 발생하면 YouTube CDN에서 이를 자동으로 차단함.
+- **IP 기반 제한**: 동일 IP(도커 컨테이너)에서 연속 다운로드가 감지되면 일시적으로 503 응답을 반환하여 트래픽을 제어함.
+- **일시적 현상**: 일정 시간(보통 수십 분 ~ 1시간)이 지나면 IP 제한이 해제되어 정상 다운로드가 가능해짐.
+
+### 대처 방법
+1. **대기 후 재시도**: 30분 ~ 1시간 후 다시 다운로드를 시도하면 정상 동작함.
+2. **동시 다운로드 자제**: 한 번에 1~2개의 다운로드만 실행하고, 완료 후 다음 파일을 받는 것을 권장.
+3. **yt-dlp 업데이트**: 최신 버전의 yt-dlp는 YouTube의 제한 정책에 더 잘 대응하도록 개선됨.
+   ```bash
+   docker exec youtube-download-app yt-dlp -U
+   ```
+4. **컨테이너 재시작**: IP 차단이 의심될 경우 Docker 네트워크 재할당을 위해 컨테이너를 재시작.
+   ```bash
+   docker restart youtube-download-app
+   ```
+   단, 동일한 네트워크/IP를 사용하므로 근본적인 해결책은 아님.
+
+### 참고
+- 이 문제는 **애플리케이션 버그가 아니라 YouTube 서버 정책**에 의한 현상입니다.
+- `npm run dev` (로컬 실행) 환경에서도 동일한 제한이 적용될 수 있습니다.
