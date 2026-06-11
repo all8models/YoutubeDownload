@@ -30,27 +30,80 @@ export async function chooseDownloadDirectory() {
 }
 
 /**
+ * 파일명에서 확장자와 기본 이름을 분리하여 인덱스를 증가시킨 새 파일명 생성
+ * 예: "video.mp4" → "video (1).mp4" → "video (2).mp4"
+ * @param {string} filename - 원본 파일명
+ * @returns {string} 인덱스가 증가된 파일명
+ */
+function incrementFilename(filename) {
+  const dotIdx = filename.lastIndexOf('.');
+  const name = dotIdx > 0 ? filename.slice(0, dotIdx) : filename;
+  const ext = dotIdx > 0 ? filename.slice(dotIdx) : '';
+  const match = name.match(/^(.*) \((\d+)\)$/);
+  if (match) {
+    const num = parseInt(match[2], 10) + 1;
+    return `${match[1]} (${num})${ext}`;
+  }
+  return `${name} (1)${ext}`;
+}
+
+/**
+ * 파일이 이미 존재하는지 확인
+ */
+async function fileExists(dirHandle, filename) {
+  try {
+    await dirHandle.getFileHandle(filename);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 중복 파일명 처리: 사용자에게 덮어쓰기 또는 새 이름 저장 선택
+ */
+async function handleDuplicateFile(dirHandle, filename) {
+  const overwrite = window.confirm(
+    `"${filename}" already exists.\n\nOK = Overwrite\nCancel = Save with a new name`
+  );
+  if (overwrite) {
+    return { action: 'overwrite', filename };
+  }
+  let newName = incrementFilename(filename);
+  while (await fileExists(dirHandle, newName)) {
+    newName = incrementFilename(newName);
+  }
+  return { action: 'rename', filename: newName };
+}
+
+/**
  * Blob 데이터를 파일로 저장
  * @param {Blob} blob                      - 저장할 데이터
  * @param {string} filename                - 파일명
  * @param {FileSystemDirectoryHandle|null} dirHandle - 폴더 핸들 (없으면 브라우저 다운로드)
+ * @returns {Promise<{method: string, filename: string}>}
  */
 export async function saveFile(blob, filename, dirHandle) {
-  // ── File System Access API 사용 가능한 경우: 선택된 폴더에 직접 저장 ──
+  // ── File System Access API: 선택된 폴더에 직접 저장 ──
   if (dirHandle && typeof dirHandle.getFileHandle === 'function') {
     try {
-      const fileHandle = await dirHandle.getFileHandle(filename, { create: true });
+      let finalName = filename;
+      if (await fileExists(dirHandle, filename)) {
+        const result = await handleDuplicateFile(dirHandle, filename);
+        finalName = result.filename;
+      }
+
+      const fileHandle = await dirHandle.getFileHandle(finalName, { create: true });
       const writable = await fileHandle.createWritable();
       await writable.write(blob);
       await writable.close();
-      return { method: 'filesystem', filename };
+      return { method: 'filesystem', filename: finalName };
     } catch (err) {
       console.error('FileSystem save failed, falling back to browser download:', err);
-      // 실패 시 브라우저 다운로드로 폴백
     }
   }
 
-  // ── 폴백: 브라우저 기본 다운로드 (다운로드 다이얼로그 표시) ──
+  // ── 폴백: 브라우저 기본 다운로드 ──
   const url = window.URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;

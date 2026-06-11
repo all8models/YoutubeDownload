@@ -29,6 +29,9 @@ export default function Home() {
   const [loadingAudio, setLoadingAudio] = useState(false); // MP3 다운로드 중 여부
   const [loadingVideo, setLoadingVideo] = useState(false); // MP4 720p 다운로드 중 여부
   const [loadingVideo1080p, setLoadingVideo1080p] = useState(false); // MP4 1080p 다운로드 중 여부
+  const [completedAudio, setCompletedAudio] = useState(false);   // MP3 완료
+  const [completedVideo, setCompletedVideo] = useState(false);   // MP4 720p 완료
+  const [completedVideo1080p, setCompletedVideo1080p] = useState(false); // MP4 1080p 완료
   const [error, setError] = useState('');                 // 에러 메시지
   const [selectedFormat, setSelectedFormat] = useState(''); // 통합 선택 포맷 ID
   const [selectedAudio, setSelectedAudio] = useState('');  // 선택된 오디오 포맷 ID
@@ -53,6 +56,9 @@ export default function Home() {
     setLoadingInfo(true);
     setInfo(null);
     setPlaylistData(null);
+    setCompletedAudio(false);
+    setCompletedVideo(false);
+    setCompletedVideo1080p(false);
 
     // 플레이리스트 URL이면 플레이리스트 API 호출
     if (isPlaylistUrl(url)) {
@@ -118,6 +124,7 @@ export default function Home() {
       const blob = await res.blob();
       const safeTitle = info?.title ? info.title.replace(/[/\\?%*:|"<>]/g, '-') : 'audio';
       await saveFile(blob, `${safeTitle}.mp3`, downloadDirHandle);
+      setCompletedAudio(true);
       
     } catch (err) {
       setError(err.message);
@@ -146,6 +153,7 @@ export default function Home() {
       const blob = await res.blob();
       const safeTitle = info?.title ? info.title.replace(/[/\\?%*:|"<>]/g, '-') : 'video';
       await saveFile(blob, `${safeTitle}.mp4`, downloadDirHandle);
+      setCompletedVideo(true);
       
     } catch (err) {
       setError(err.message);
@@ -174,6 +182,7 @@ export default function Home() {
       const blob = await res.blob();
       const safeTitle = info?.title ? info.title.replace(/[/\\?%*:|"<>]/g, '-') : 'video';
       await saveFile(blob, `${safeTitle}_1080p.mp4`, downloadDirHandle);
+      setCompletedVideo1080p(true);
       
     } catch (err) {
       setError(err.message);
@@ -219,9 +228,9 @@ export default function Home() {
         {info && !playlistData && (
           <>
             <div style={{ marginBottom: '1.5rem', display: 'flex', justifyContent: 'center', gap: '1rem', flexWrap: 'wrap' }}>
-              <DownloadButton onClick={handleDownloadAudio} isLoading={loadingAudio} label="Download MP3" />
-              <DownloadButton onClick={handleDownloadVideo} isLoading={loadingVideo} label="MP4 (720p)" />
-              <DownloadButton onClick={handleDownloadVideo1080p} isLoading={loadingVideo1080p} label="MP4 (1080p)" />
+              <DownloadButton onClick={handleDownloadAudio} isLoading={loadingAudio} isCompleted={completedAudio} label="Download MP3" />
+              <DownloadButton onClick={handleDownloadVideo} isLoading={loadingVideo} isCompleted={completedVideo} label="MP4 (720p)" />
+              <DownloadButton onClick={handleDownloadVideo1080p} isLoading={loadingVideo1080p} isCompleted={completedVideo1080p} label="MP4 (1080p)" />
             </div>
             <VideoInfo 
               info={info} 

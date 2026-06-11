@@ -11,7 +11,8 @@ import { saveFile } from '../lib/fileDownload';
  * - 개별 다운로드 상태를 video ID 기준으로 추적
  */
 export default function PlaylistView({ playlistData, downloadDirHandle }) {
-  const [loadingMap, setLoadingMap] = useState({}); // { "videoId-mp3": true, ... }
+  const [loadingMap, setLoadingMap] = useState({});   // { "videoUrl-mp3-720": true, ... }
+  const [completedMap, setCompletedMap] = useState({}); // { "videoUrl-mp3-720": true, ... }
   const [error, setError] = useState('');
 
   /**
@@ -47,6 +48,8 @@ export default function PlaylistView({ playlistData, downloadDirHandle }) {
       const safeTitle = (videoTitle || 'video').replace(/[/\\?%*:|"<>]/g, '-');
       const ext = type === 'mp3' ? '.mp3' : '.mp4';
       await saveFile(blob, `${safeTitle}${ext}`, downloadDirHandle);
+      // 다운로드 완료 표시
+      setCompletedMap((prev) => ({ ...prev, [loadKey]: true }));
     } catch (err) {
       setError(err.message);
     } finally {
@@ -98,16 +101,19 @@ export default function PlaylistView({ playlistData, downloadDirHandle }) {
                 <DownloadButton
                   onClick={() => downloadVideo(video.url, video.title, 'mp3')}
                   isLoading={loadingMap[`${video.url}-mp3-720`]}
+                  isCompleted={completedMap[`${video.url}-mp3-720`]}
                   label="MP3"
                 />
                 <DownloadButton
                   onClick={() => downloadVideo(video.url, video.title, 'mp4', 720)}
                   isLoading={loadingMap[`${video.url}-mp4-720`]}
+                  isCompleted={completedMap[`${video.url}-mp4-720`]}
                   label="720p"
                 />
                 <DownloadButton
                   onClick={() => downloadVideo(video.url, video.title, 'mp4', 1080)}
                   isLoading={loadingMap[`${video.url}-mp4-1080`]}
+                  isCompleted={completedMap[`${video.url}-mp4-1080`]}
                   label="1080p"
                 />
               </div>
