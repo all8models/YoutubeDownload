@@ -84,17 +84,43 @@ export default function PlaylistView({ playlistData, downloadDirHandle }) {
 
       {/* 영상 목록 */}
       <div className="playlist-videos">
-        {playlistData.videos.map((video) => (
-          <div key={video.id} className="playlist-video-item glass-panel">
-            <img
-              className="playlist-thumbnail"
-              src={video.thumbnail}
-              alt={video.title}
-              loading="lazy"
-            />
+        {playlistData.videos.map((video) => {
+          const isRestricted = video.accessible === false;
+
+          return (
+          <div key={video.id} className={`playlist-video-item glass-panel${isRestricted ? ' video-restricted' : ''}`}>
+            <div className="playlist-thumbnail-wrapper">
+              <img
+                className="playlist-thumbnail"
+                src={video.thumbnail}
+                alt={video.title || 'Restricted video'}
+                loading="lazy"
+              />
+              {isRestricted && (
+                <div className="restricted-overlay" title="멤버십 한정 콘텐츠">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                    <circle cx="12" cy="16" r="1"/>
+                  </svg>
+                </div>
+              )}
+            </div>
             <div className="playlist-video-info">
-              <h3 className="playlist-video-title">{video.title}</h3>
-              {video.duration && (
+              <h3 className={`playlist-video-title${isRestricted ? ' text-muted' : ''}`}>
+                {video.title || '멤버십 한정 콘텐츠'}
+              </h3>
+              {isRestricted && (
+                <p className="restricted-badge">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                    <circle cx="12" cy="16" r="1"/>
+                  </svg>
+                  멤버십 한정 · 다운로드 불가
+                </p>
+              )}
+              {!isRestricted && video.duration && (
                 <p className="playlist-video-duration">{formatDuration(video.duration)}</p>
               )}
               <div className="playlist-download-buttons">
@@ -102,24 +128,28 @@ export default function PlaylistView({ playlistData, downloadDirHandle }) {
                   onClick={() => downloadVideo(video.url, video.title, 'mp3')}
                   isLoading={loadingMap[`${video.url}-mp3-720`]}
                   isCompleted={completedMap[`${video.url}-mp3-720`]}
+                  disabled={isRestricted}
                   label="MP3"
                 />
                 <DownloadButton
                   onClick={() => downloadVideo(video.url, video.title, 'mp4', 720)}
                   isLoading={loadingMap[`${video.url}-mp4-720`]}
                   isCompleted={completedMap[`${video.url}-mp4-720`]}
+                  disabled={isRestricted}
                   label="720p"
                 />
                 <DownloadButton
                   onClick={() => downloadVideo(video.url, video.title, 'mp4', 1080)}
                   isLoading={loadingMap[`${video.url}-mp4-1080`]}
                   isCompleted={completedMap[`${video.url}-mp4-1080`]}
+                  disabled={isRestricted}
                   label="1080p"
                 />
               </div>
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

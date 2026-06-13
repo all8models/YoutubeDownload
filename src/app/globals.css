@@ -373,6 +373,60 @@ button.completed:hover {
   color: #94a3b8;
 }
 
+/* ─── 멤버십 한정(접근 불가) 영상 표시 ─────────────────────────── */
+.video-restricted {
+  opacity: 0.65;
+}
+
+.video-restricted:hover {
+  transform: none !important;
+  box-shadow: var(--glass-shadow) !important;
+}
+
+.playlist-thumbnail-wrapper {
+  position: relative;
+  width: 160px;
+  min-width: 160px;
+  height: 90px;
+}
+
+.restricted-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.text-muted {
+  color: #64748b !important;
+}
+
+.restricted-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  color: #f87171;
+  font-weight: 500;
+}
+
+/* 제한된 콘텐츠 다운로드 버튼 */
+button.restricted {
+  background-color: rgba(100, 116, 139, 0.15);
+  border: 1px solid rgba(100, 116, 139, 0.25);
+  color: #64748b;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+button.restricted:hover {
+  transform: none;
+  background-color: rgba(100, 116, 139, 0.15);
+}
+
 /* ─── 다운로드 버튼 그룹 ──────────────────────────────────────── */
 .playlist-download-buttons {
   display: flex;
@@ -394,6 +448,7 @@ button.completed:hover {
     align-items: flex-start;
   }
 
+  .playlist-thumbnail-wrapper,
   .playlist-thumbnail {
     width: 100%;
     min-width: 100%;
