@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import youtubedl from 'youtube-dl-exec';
+import ytdl from '../../../lib/ytdl';
 
 /**
  * GET /api/info?url=YOUTUBE_URL
@@ -27,7 +27,7 @@ export async function GET(request) {
 
   try {
     // yt-dlp로 영상 정보 조회 (--dump-json 옵션)
-    const info = await youtubedl(url, {
+    const info = await ytdl(url, {
       dumpSingleJson: true,            // JSON 형태로 정보만 출력
       noWarnings: true,                // 경고 메시지 숨김
       callHome: false,                 // 홈 호출 비활성화

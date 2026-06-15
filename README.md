@@ -2,6 +2,10 @@
 
 Next.js 기반의 간단하고 빠른 유튜브 동영상/오디오 다운로드 웹 애플리케이션입니다. `youtube-dl-exec` (yt-dlp 래퍼)와 `ffmpeg`를 활용하여 서버 측에서 미디어를 추출하고 변환하여 사용자에게 제공합니다.
 
+### 🆕 추가 기능 (2026-06-15)
+
+- **쇼트(Shorts) 다운로드 지원**: 채널 쇼트 페이지(`@channel/shorts`) URL 입력 시, 쇼트 영상 목록을 불러와 각 영상별로 MP3 / MP4(720p) / MP4(1080p) 개별 다운로드 가능
+
 ### 🆕 추가 기능 (2026-06-11)
 
 - **플레이리스트 지원**: URL에 `list=`가 포함된 재생목록 링크 입력 시, 영상 목록을 불러와 각 영상별로 MP3 / MP4(720p) / MP4(1080p) 개별 다운로드 가능
@@ -32,6 +36,8 @@ YoutubeDownload/
 │   │   │   │   └── route.js    
 │   │   │   ├── playlist/          # 🆕 플레이리스트 정보 API (--flat-playlist)
 │   │   │   │   └── route.js
+│   │   │   ├── shorts/            # 🆕 쇼트(Shorts) 목록 API (--flat-playlist)
+│   │   │   │   └── route.js
 │   │   │   └── download/          # 다운로드 처리 로직 (MP3 / MP4)
 │   │   │       ├── route.js       # MP3 변환 및 추출 API
 │   │   │       └── mp4/
@@ -44,9 +50,11 @@ YoutubeDownload/
 │   │   ├── DownloadButton.js      # 재사용 가능한 다운로드 버튼 컴포넌트
 │   │   ├── DownloadFolderPicker.js# 🆕 자동 저장 폴더 선택 버튼 컴포넌트
 │   │   ├── PlaylistView.js        # 🆕 플레이리스트 뷰 컴포넌트
+│   │   ├── ShortsView.js          # 🆕 쇼트(Shorts) 뷰 컴포넌트
 │   │   └── VideoInfo.js           # 썸네일, 제목, 포맷 선택 드롭다운 컴포넌트
 │   └── lib/
-│       └── fileDownload.js        # 🆕 File System Access API 파일 저장 유틸리티
+│       ├── fileDownload.js        # 🆕 File System Access API 파일 저장 유틸리티
+│       └── ytdl.js                # yt-dlp 바이너리 자동 탐색 래퍼 (Docker/macOS 호환)
 ├── doc/
 │   ├── DOCKER_TROUBLESHOOTING.md  # 🆕 Docker 기동 트러블슈팅 기록
 │   └── ...
@@ -64,7 +72,7 @@ YoutubeDownload/
 
 ### 1. URL 메타데이터 분석
 - 유튜브 링크 입력 시 썸네일, 제목, 영상 길이를 파싱합니다.
-- **단일 영상**과 **재생목록(플레이리스트) URL**을 자동으로 구분하여 처리합니다.
+- **단일 영상**, **재생목록(플레이리스트)**, **쇼트(Shorts) 페이지** URL을 자동으로 구분하여 처리합니다.
 
 ### 2. 플레이리스트 지원 🆕
 - URL에 `list=` 파라미터가 포함되어 있으면 자동으로 플레이리스트로 인식합니다.
@@ -72,18 +80,25 @@ YoutubeDownload/
 - 플레이리스트 UI에서 각 영상별로 MP3 / MP4(720p) / MP4(1080p) 개별 다운로드가 가능합니다.
 - 각 영상의 다운로드 상태는 독립적으로 관리됩니다.
 
-### 3. 포맷별 다운로드 지원
+### 3. 쇼트(Shorts) 다운로드 지원 🆕
+- 채널 쇼트 페이지 URL(`https://www.youtube.com/@channel/shorts`)을 입력하면 자동으로 쇼트로 인식합니다.
+- URL 경로에 `/shorts`가 포함되어 있으면 쇼트 전용 API(`/api/shorts`)를 호출합니다.
+- 세로형(9:16) 썸네일과 함께 쇼트 목록을 표시하며, 각 쇼트별 MP3 / MP4(720p) / MP4(1080p) 다운로드 가능.
+- `youtube:player_client=android` extractor args로 쇼트 페이지 추출 안정성 향상.
+- 소스는 플레이리스트와 완전히 분리된 `/api/shorts`, `ShortsView` 컴포넌트로 구현되어 있습니다.
+
+### 4. 포맷별 다운로드 지원
 - **MP3 다운로드:** 비디오에서 `bestaudio` 오디오 스트림을 추출한 뒤 `ffmpeg`를 통해 MP3 파일로 변환하여 제공.
 - **MP4 720p 다운로드:** 720p 이하 최고 화질 비디오 + 오디오 스트림을 `ffmpeg`로 병합하여 완벽한 MP4 파일 제공.
 - **MP4 1080p 다운로드:** 1080p 이하 최고 화질 비디오 + 오디오 스트림을 병합하여 제공.
 
-### 4. 자동 파일 저장 (폴더 지정) 🆕
+### 5. 자동 파일 저장 (폴더 지정) 🆕
 - Chrome / Edge 등 File System Access API 지원 브라우저에서 `Choose Save Folder` 버튼 제공.
 - 폴더를 한 번 지정하면 이후 모든 다운로드가 **다운로드 다이얼로그 없이** 자동으로 해당 폴더에 저장됩니다.
 - 파일명은 영상 제목을 기반으로 자동 생성됩니다 (특수문자 자동 치환).
 - Safari / Firefox 등 미지원 브라우저에서는 버튼이 표시되지 않으며 기존 브라우저 다운로드 방식으로 동작합니다.
 
-### 5. 안정성 처리
+### 6. 안정성 처리
 - 서버에 기본 `ffmpeg`가 설치되어 있지 않은 환경을 대비하여 `ffmpeg-static`을 내장하여 플랫폼 독립적으로 작동합니다.
 - Docker 이미지에는 Python3와 ffmpeg가 내장되어 있어 호스트 환경과 무관하게 안정적으로 동작합니다.
 

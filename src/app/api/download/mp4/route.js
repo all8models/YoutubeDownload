@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import youtubedl from 'youtube-dl-exec';
+import ytdl from '../../../../lib/ytdl';
 import fs from 'fs';
 import path from 'path';
 import { pipeline } from 'stream';
@@ -37,7 +37,7 @@ export async function GET(request) {
     const format = `bestvideo[height<=${targetQuality}]+bestaudio/best[height<=${targetQuality}]`;
     const tempPath = path.join(process.cwd(), 'tmp', `${Date.now()}.mp4`);
     
-    await youtubedl(url, {
+    await ytdl(url, {
       format,
       output: tempPath,
       noCheckCertificate: true,

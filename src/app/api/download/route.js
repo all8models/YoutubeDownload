@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import youtubedl from 'youtube-dl-exec';
+import ytdl from '../../../lib/ytdl';
 import fs from 'fs';
 import path from 'path';
 
@@ -28,7 +28,7 @@ export async function POST(request) {
     const tempPath = path.join(tempDir, `${Date.now()}.${format_id}.mp3`);
     
     // yt-dlp로 오디오 추출 및 MP3 변환
-    await youtubedl(url, {
+    await ytdl(url, {
       format: format_id,               // 클라이언트가 선택한 포맷 ID
       output: tempPath,                // 다운로드 경로
       noCheckCertificate: true,
@@ -81,7 +81,7 @@ export async function GET(request) {
     const ffmpegPath = path.join(process.cwd(), 'node_modules', 'ffmpeg-static', 'ffmpeg');
     const tempPath = path.join(tempDir, `${Date.now()}.${format_id}.mp3`);
     
-    await youtubedl(url, {
+    await ytdl(url, {
       format: format_id,
       output: tempPath,
       noCheckCertificate: true,

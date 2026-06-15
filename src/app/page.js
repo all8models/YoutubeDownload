@@ -4,6 +4,7 @@ import { useState } from 'react';
 import VideoInfo from '../components/VideoInfo';
 import DownloadButton from '../components/DownloadButton';
 import PlaylistView from '../components/PlaylistView';
+import ShortsView from '../components/ShortsView';
 import DownloadFolderPicker from '../components/DownloadFolderPicker';
 import { chooseDownloadDirectory, saveFile } from '../lib/fileDownload';
 
@@ -13,6 +14,20 @@ import { chooseDownloadDirectory, saveFile } from '../lib/fileDownload';
  */
 function isPlaylistUrl(url) {
   return url.includes('list=');
+}
+
+/**
+ * URL이 YouTube Shorts 페이지인지 확인
+ * - @channel/shorts (채널 쇼트 페이지)
+ * - /shorts/VIDEO_ID (단일 쇼트)
+ */
+function isShortsUrl(url) {
+  try {
+    const parsed = new URL(url);
+    return parsed.pathname.includes('/shorts');
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -37,6 +52,7 @@ export default function Home() {
   const [selectedAudio, setSelectedAudio] = useState('');  // 선택된 오디오 포맷 ID
   const [selectedVideo, setSelectedVideo] = useState('');  // 선택된 비디오 포맷 ID
   const [playlistData, setPlaylistData] = useState(null);  // 플레이리스트 정보
+  const [shortsData, setShortsData] = useState(null);      // 쇼트 정보
   const [downloadDirHandle, setDownloadDirHandle] = useState(null); // 자동 저장 폴더 핸들
 
   // ─── 다운로드 폴더 선택 (File System Access API) ──────────────────
@@ -56,9 +72,27 @@ export default function Home() {
     setLoadingInfo(true);
     setInfo(null);
     setPlaylistData(null);
+    setShortsData(null);
     setCompletedAudio(false);
     setCompletedVideo(false);
     setCompletedVideo1080p(false);
+
+    // 쇼트 페이지 URL이면 쇼트 API 호출
+    if (isShortsUrl(url)) {
+      try {
+        const res = await fetch(`/api/shorts?url=${encodeURIComponent(url)}`);
+        const data = await res.json();
+
+        if (!res.ok) throw new Error(data.error || 'Failed to fetch shorts');
+
+        setShortsData(data);
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        setLoadingInfo(false);
+      }
+      return;
+    }
 
     // 플레이리스트 URL이면 플레이리스트 API 호출
     if (isPlaylistUrl(url)) {
@@ -193,7 +227,7 @@ export default function Home() {
 
   // ─── UI 렌더링 ─────────────────────────────────────────────────
   return (
-    <div className={`container ${playlistData ? 'container-wide' : ''}`}>
+    <div className={`container ${playlistData || shortsData ? 'container-wide' : ''}`}>
       <div className="glass-panel">
         <h1>YouTube to MP3 / MP4</h1>
         
@@ -224,8 +258,13 @@ export default function Home() {
           <PlaylistView playlistData={playlistData} downloadDirHandle={downloadDirHandle} />
         )}
         
+        {/* 쇼트 모드: 쇼트 목록 + 개별 다운로드 버튼 */}
+        {shortsData && (
+          <ShortsView shortsData={shortsData} downloadDirHandle={downloadDirHandle} />
+        )}
+        
         {/* 단일 영상 모드: 영상 정보 + 포맷 선택 + 다운로드 버튼 */}
-        {info && !playlistData && (
+        {info && !playlistData && !shortsData && (
           <>
             <div style={{ marginBottom: '1.5rem', display: 'flex', justifyContent: 'center', gap: '1rem', flexWrap: 'wrap' }}>
               <DownloadButton onClick={handleDownloadAudio} isLoading={loadingAudio} isCompleted={completedAudio} label="Download MP3" />
