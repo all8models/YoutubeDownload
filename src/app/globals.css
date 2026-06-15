@@ -567,3 +567,156 @@ button.completed:hover {
     justify-content: center;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   채널 영상(Channel Videos) 뷰 스타일
+   - PlaylistView, ShortsView와 동일한 UI 패턴, 별도 CSS 클래스 사용
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ─── 채널 전체 영역 ──────────────────────────────────────────── */
+.channel-view {
+  margin-top: 1.5rem;
+  animation: fadeIn 0.5s ease;
+}
+
+/* ─── 채널 헤더 (채널명 + 영상 개수) ──────────────────────────── */
+.channel-header {
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.channel-title {
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: var(--text-color);
+  background: linear-gradient(to right, #10b981, #3b82f6);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.channel-count {
+  font-size: 0.9rem;
+  color: #94a3b8;
+  background: rgba(148, 163, 184, 0.15);
+  padding: 0.2rem 0.8rem;
+  border-radius: 9999px;
+}
+
+/* ─── 영상 목록 (스크롤 가능) ─────────────────────────────────── */
+.channel-videos {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  max-height: 70vh;
+  overflow-y: auto;
+  padding-right: 0.5rem;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.3) transparent;
+}
+
+.channel-videos::-webkit-scrollbar {
+  width: 6px;
+}
+
+.channel-videos::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.channel-videos::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.3);
+  border-radius: 3px;
+}
+
+/* ─── 개별 영상 카드 ──────────────────────────────────────────── */
+.channel-video-item {
+  display: flex;
+  gap: 1rem;
+  padding: 0.75rem !important;
+  border-radius: 12px !important;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  align-items: center;
+}
+
+.channel-video-item:hover {
+  transform: translateX(4px);
+  box-shadow: 0 4px 20px rgba(16, 185, 129, 0.15) !important;
+}
+
+/* ─── 썸네일 ──────────────────────────────────────────────────── */
+.channel-thumbnail {
+  width: 160px;
+  min-width: 160px;
+  height: 90px;
+  object-fit: cover;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.5);
+}
+
+/* ─── 영상 정보 영역 ──────────────────────────────────────────── */
+.channel-video-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.channel-video-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-color);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.channel-video-duration {
+  font-size: 0.8rem;
+  color: #94a3b8;
+}
+
+/* ─── 다운로드 버튼 그룹 ──────────────────────────────────────── */
+.channel-download-buttons {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.25rem;
+}
+
+.channel-download-buttons button {
+  padding: 0.4rem 1rem;
+  font-size: 0.8rem;
+  border-radius: 8px;
+}
+
+/* ─── 반응형: 작은 화면에서 썸네일 숨기고 세로 정렬 ────────────── */
+@media (max-width: 640px) {
+  .channel-video-item {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .channel-thumbnail {
+    width: 100%;
+    min-width: 100%;
+    height: auto;
+    aspect-ratio: 16/9;
+  }
+
+  .channel-video-title {
+    white-space: normal;
+  }
+
+  .channel-download-buttons {
+    width: 100%;
+  }
+
+  .channel-download-buttons button {
+    flex: 1;
+    justify-content: center;
+  }
+}

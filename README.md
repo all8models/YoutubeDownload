@@ -169,7 +169,22 @@ docker compose down
 
 ---
 
-## 🚨 알려진 이슈: YouTube HTTP 503 Rate Limiting
+## � 향후 개선 과제
+
+### 1. 채널 영상 조회 시 요청 간 대기 시간 증가
+- **현재**: `sleepRequests: 0.5` (0.5초)
+- **목표**: 채널 영상 수에 따라 동적으로 대기 시간을 조정하거나, 설정 가능한 값으로 변경
+- **파일**: `src/app/api/channel-videos/route.js`
+- **관련 이슈**: 영상이 많은 채널(500개 이상) 조회 시 YouTube 레이트 리밋 발생 가능
+
+### 2. `--throttled-rate` 옵션 추가
+- **설명**: yt-dlp에 `--throttled-rate` 옵션을 추가하여 레이트 리밋 발생 시 자동으로 대기 후 재시도하도록 개선
+- **파일**: `src/app/api/channel-videos/route.js`
+- **참고**: yt-dlp 공식 문서 - [Throttled Rate](https://github.com/yt-dlp/yt-dlp#throttled-rate)
+
+---
+
+## �🚨 알려진 이슈: YouTube HTTP 503 Rate Limiting
 
 ### 발생 상황 (2026-06-11)
 - 한 세션에서 **40개의 다운로드 버튼을 연속 클릭**하여 다운로드를 시도함.

@@ -1,0 +1,79 @@
+import { NextResponse } from 'next/server';
+import ytdl from '../../../lib/ytdl';
+
+/**
+ * GET /api/channel-videos?url=CHANNEL_VIDEOS_URL
+ *
+ * YouTube 채널의 /videos 페이지에서 업로드한 영상 목록을 반환합니다.
+ * --flat-playlist 옵션으로 각 영상의 상세 정보 없이 ID, 제목, 길이만 빠르게 가져옵니다.
+ *
+ * 예: https://www.youtube.com/@moyamoya_labo/videos
+ *
+ * ⚠️ 레이트 리밋 방지를 위해 최대 50개 영상만 가져옵니다 (playlistEnd: 50).
+ * 필요 시 ?max_results=100 파라미터로 조정 가능합니다.
+ *
+ * 응답 예시:
+ * {
+ *   channel_title: "Channel Name",
+ *   video_count: 50,
+ *   total_available: 561,
+ *   limited: true,
+ *   videos: [
+ *     { id: "abc123", title: "Video 1", url: "https://youtube.com/watch?v=...", thumbnail: "...", duration: 212 },
+ *     ...
+ *   ]
+ * }
+ */
+export async function GET(request) {
+  const { searchParams } = new URL(request.url);
+  const url = searchParams.get('url');
+
+  if (!url) {
+    return NextResponse.json({ error: 'URL is required' }, { status: 400 });
+  }
+
+  try {
+    // URL에 max_results 파라미터가 있으면 그 값을 사용, 없으면 기본 50
+    const maxResults = parseInt(searchParams.get('max_results') || '50', 10);
+    const limit = Math.min(Math.max(1, maxResults), 200); // 최소 1, 최대 200
+
+    const info = await ytdl(url, {
+      dumpSingleJson: true,                 // JSON 형태로 정보 출력
+      flatPlaylist: true,                   // 채널 영상 목록만 빠르게 추출 (상세 정보 생략)
+      playlistEnd: limit,                   // 레이트 리밋 방지: 최대 N개만 가져오기
+      noWarnings: true,
+      callHome: false,
+      noCheckCertificate: true,
+      youtubeSkipDashManifest: true,        // DASH 매니페스트 생략 (속도 향상)
+      sleepRequests: 0.5,                  // 요청 간 0.5초 대기 (레이트 리밋 방지)
+      extractorArgs: 'youtube:player_client=android', // Android 클라이언트 사용 (안정성 향상)
+      ignoreErrors: true,                   // 개별 영상 오류는 무시하고 계속 진행
+    });
+
+    // entries 배열에서 null(삭제된 영상 등) 제외하고 필요한 정보만 매핑
+    const videos = (info.entries || [])
+      .filter(Boolean)
+      .map((entry) => ({
+        id: entry.id,
+        title: entry.title,
+        url: entry.url || `https://youtube.com/watch?v=${entry.id}`,
+        thumbnail: `https://img.youtube.com/vi/${entry.id}/mqdefault.jpg`,
+        duration: entry.duration,
+      }));
+
+    return NextResponse.json({
+      channel_title: info.title || info.channel || info.uploader || 'Unknown Channel',
+      channel_url: info.channel_url || info.uploader_url || url,
+      video_count: videos.length,
+      total_available: info.playlist_count || videos.length,
+      limited: (info.playlist_count || videos.length) > videos.length,
+      videos,
+    });
+  } catch (error) {
+    console.error('Channel videos fetch error:', error);
+    return NextResponse.json(
+      { error: 'Failed to fetch channel videos. Make sure the URL is a valid YouTube channel videos page (e.g. https://www.youtube.com/@channel/videos).' },
+      { status: 500 }
+    );
+  }
+}

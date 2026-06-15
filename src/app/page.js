@@ -5,6 +5,7 @@ import VideoInfo from '../components/VideoInfo';
 import DownloadButton from '../components/DownloadButton';
 import PlaylistView from '../components/PlaylistView';
 import ShortsView from '../components/ShortsView';
+import ChannelVideosView from '../components/ChannelVideosView';
 import DownloadFolderPicker from '../components/DownloadFolderPicker';
 import { chooseDownloadDirectory, saveFile } from '../lib/fileDownload';
 
@@ -25,6 +26,22 @@ function isShortsUrl(url) {
   try {
     const parsed = new URL(url);
     return parsed.pathname.includes('/shorts');
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * URL이 YouTube 채널의 /videos 페이지인지 확인
+ * - @channel/videos (채널 업로드 영상 목록 페이지)
+ * - /c/channel/videos (레거시 채널 URL)
+ */
+function isChannelVideosUrl(url) {
+  try {
+    const parsed = new URL(url);
+    // /videos 로 끝나거나 /videos/ 로 시작하는 경로 확인
+    const pathParts = parsed.pathname.split('/').filter(Boolean);
+    return pathParts.length > 0 && pathParts[pathParts.length - 1] === 'videos';
   } catch {
     return false;
   }
@@ -53,6 +70,7 @@ export default function Home() {
   const [selectedVideo, setSelectedVideo] = useState('');  // 선택된 비디오 포맷 ID
   const [playlistData, setPlaylistData] = useState(null);  // 플레이리스트 정보
   const [shortsData, setShortsData] = useState(null);      // 쇼트 정보
+  const [channelData, setChannelData] = useState(null);    // 채널 영상 목록 정보
   const [downloadDirHandle, setDownloadDirHandle] = useState(null); // 자동 저장 폴더 핸들
 
   // ─── 다운로드 폴더 선택 (File System Access API) ──────────────────
@@ -73,6 +91,7 @@ export default function Home() {
     setInfo(null);
     setPlaylistData(null);
     setShortsData(null);
+    setChannelData(null);
     setCompletedAudio(false);
     setCompletedVideo(false);
     setCompletedVideo1080p(false);
@@ -86,6 +105,23 @@ export default function Home() {
         if (!res.ok) throw new Error(data.error || 'Failed to fetch shorts');
 
         setShortsData(data);
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        setLoadingInfo(false);
+      }
+      return;
+    }
+
+    // 채널 /videos 페이지 URL이면 채널 영상 API 호출
+    if (isChannelVideosUrl(url)) {
+      try {
+        const res = await fetch(`/api/channel-videos?url=${encodeURIComponent(url)}`);
+        const data = await res.json();
+
+        if (!res.ok) throw new Error(data.error || 'Failed to fetch channel videos');
+
+        setChannelData(data);
       } catch (err) {
         setError(err.message);
       } finally {
@@ -227,7 +263,7 @@ export default function Home() {
 
   // ─── UI 렌더링 ─────────────────────────────────────────────────
   return (
-    <div className={`container ${playlistData || shortsData ? 'container-wide' : ''}`}>
+    <div className={`container ${playlistData || shortsData || channelData ? 'container-wide' : ''}`}>
       <div className="glass-panel">
         <h1>YouTube to MP3 / MP4</h1>
         
@@ -263,8 +299,13 @@ export default function Home() {
           <ShortsView shortsData={shortsData} downloadDirHandle={downloadDirHandle} />
         )}
         
+        {/* 채널 영상 목록 모드: 영상 목록 + 개별 다운로드 버튼 */}
+        {channelData && (
+          <ChannelVideosView channelData={channelData} downloadDirHandle={downloadDirHandle} />
+        )}
+        
         {/* 단일 영상 모드: 영상 정보 + 포맷 선택 + 다운로드 버튼 */}
-        {info && !playlistData && !shortsData && (
+        {info && !playlistData && !shortsData && !channelData && (
           <>
             <div style={{ marginBottom: '1.5rem', display: 'flex', justifyContent: 'center', gap: '1rem', flexWrap: 'wrap' }}>
               <DownloadButton onClick={handleDownloadAudio} isLoading={loadingAudio} isCompleted={completedAudio} label="Download MP3" />
