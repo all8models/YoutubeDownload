@@ -24,6 +24,31 @@ export const metadata = {
 export default function RootLayout({ children }) {
   return (
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable}`}>
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function() {
+                try {
+                  var theme = localStorage.getItem('theme') || 'system';
+                  if (theme === 'system') {
+                    var darkQuery = window.matchMedia('(prefers-color-scheme: dark)');
+                    if (darkQuery.matches) {
+                      document.documentElement.classList.add('dark-theme');
+                    } else {
+                      document.documentElement.classList.add('light-theme');
+                    }
+                  } else if (theme === 'dark') {
+                    document.documentElement.classList.add('dark-theme');
+                  } else {
+                    document.documentElement.classList.add('light-theme');
+                  }
+                } catch (e) {}
+              })()
+            `,
+          }}
+        />
+      </head>
       <body>{children}</body>
     </html>
   );
