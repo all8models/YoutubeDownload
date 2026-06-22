@@ -903,11 +903,17 @@ button.disabled-restricted:hover {
   }
 }
 
-/* ─── 테마 스위처 (Segmented Control) ───────────────────────── */
+/* ─── 테마 헤더 및 스위처 (Segmented Control) ───────────────── */
+.theme-header {
+  display: flex;
+  justify-content: flex-end;
+  width: 100%;
+  margin-top: -0.5rem;
+  margin-right: -0.5rem;
+  margin-bottom: 0.5rem;
+}
+
 .theme-selector-container {
-  position: absolute;
-  top: 1.5rem;
-  right: 1.5rem;
   display: flex;
   background: rgba(15, 23, 42, 0.2);
   border: 1px solid var(--glass-border);
@@ -958,9 +964,10 @@ button.disabled-restricted:hover {
 }
 
 @media (max-width: 640px) {
-  .theme-selector-container {
-    position: static;
-    margin: 0 auto 1.5rem auto;
-    width: fit-content;
+  .theme-header {
+    justify-content: center;
+    margin-top: 0;
+    margin-right: 0;
+    margin-bottom: 1rem;
   }
 }

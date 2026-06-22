@@ -268,28 +268,30 @@ export default function Home() {
     <div className={`container ${playlistData || shortsData || channelData ? 'container-wide' : ''}`}>
       <div className="glass-panel">
         {/* 테마 스위처 (Segmented Control) */}
-        <div className="theme-selector-container">
-          <button 
-            className={`theme-btn ${theme === 'light' ? 'active' : ''}`} 
-            onClick={() => handleThemeChange('light')}
-            title="라이트 모드"
-          >
-            <span>☀️</span> 라이트
-          </button>
-          <button 
-            className={`theme-btn ${theme === 'dark' ? 'active' : ''}`} 
-            onClick={() => handleThemeChange('dark')}
-            title="다크 모드"
-          >
-            <span>🌙</span> 다크
-          </button>
-          <button 
-            className={`theme-btn ${theme === 'system' ? 'active' : ''}`} 
-            onClick={() => handleThemeChange('system')}
-            title="시스템 설정 동기화"
-          >
-            <span>🖥️</span> 시스템
-          </button>
+        <div className="theme-header">
+          <div className="theme-selector-container">
+            <button 
+              className={`theme-btn ${theme === 'light' ? 'active' : ''}`} 
+              onClick={() => handleThemeChange('light')}
+              title="라이트 모드"
+            >
+              <span>☀️</span> 라이트
+            </button>
+            <button 
+              className={`theme-btn ${theme === 'dark' ? 'active' : ''}`} 
+              onClick={() => handleThemeChange('dark')}
+              title="다크 모드"
+            >
+              <span>🌙</span> 다크
+            </button>
+            <button 
+              className={`theme-btn ${theme === 'system' ? 'active' : ''}`} 
+              onClick={() => handleThemeChange('system')}
+              title="시스템 설정 동기화"
+            >
+              <span>🖥️</span> 시스템
+            </button>
+          </div>
         </div>
 
         <h1>YouTube to MP3 / MP4</h1>
