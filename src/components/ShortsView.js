@@ -83,42 +83,61 @@ export default function ShortsView({ shortsData, downloadDirHandle }) {
 
       {/* 쇼트 목록 */}
       <div className="shorts-videos">
-        {shortsData.videos.map((video) => (
-          <div key={video.id} className="shorts-video-item glass-panel">
-            <img
-              className="shorts-thumbnail"
-              src={video.thumbnail}
-              alt={video.title}
-              loading="lazy"
-            />
-            <div className="shorts-video-info">
-              <h3 className="shorts-video-title">{video.title}</h3>
-              {video.duration && (
-                <p className="shorts-video-duration">{formatDuration(video.duration)}</p>
-              )}
-              <div className="shorts-download-buttons">
-                <DownloadButton
-                  onClick={() => downloadVideo(video.url, video.title, 'mp3')}
-                  isLoading={loadingMap[`${video.url}-mp3-720`]}
-                  isCompleted={completedMap[`${video.url}-mp3-720`]}
-                  label="MP3"
+        {shortsData.videos.map((video) => {
+          const isRestricted = video.accessible === false;
+          return (
+            <div key={video.id} className={`shorts-video-item glass-panel ${isRestricted ? 'restricted-item' : ''}`}>
+              <div className="shorts-thumbnail-wrapper">
+                <img
+                  className="shorts-thumbnail"
+                  src={video.thumbnail}
+                  alt={video.title}
+                  loading="lazy"
                 />
-                <DownloadButton
-                  onClick={() => downloadVideo(video.url, video.title, 'mp4', 720)}
-                  isLoading={loadingMap[`${video.url}-mp4-720`]}
-                  isCompleted={completedMap[`${video.url}-mp4-720`]}
-                  label="720p"
-                />
-                <DownloadButton
-                  onClick={() => downloadVideo(video.url, video.title, 'mp4', 1080)}
-                  isLoading={loadingMap[`${video.url}-mp4-1080`]}
-                  isCompleted={completedMap[`${video.url}-mp4-1080`]}
-                  label="1080p"
-                />
+                {isRestricted && (
+                  <div className="thumbnail-restricted-overlay" title="멤버십 전용 또는 비공개 콘텐츠">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                      <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                      <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                    </svg>
+                  </div>
+                )}
+              </div>
+              <div className="shorts-video-info">
+                <h3 className="shorts-video-title">
+                  {video.title}
+                  {isRestricted && <span className="restricted-badge">다운로드 불가</span>}
+                </h3>
+                {video.duration && !isRestricted && (
+                  <p className="shorts-video-duration">{formatDuration(video.duration)}</p>
+                )}
+                <div className="shorts-download-buttons">
+                  <DownloadButton
+                    onClick={() => downloadVideo(video.url, video.title, 'mp3')}
+                    isLoading={loadingMap[`${video.url}-mp3-720`]}
+                    isCompleted={completedMap[`${video.url}-mp3-720`]}
+                    disabled={isRestricted}
+                    label="MP3"
+                  />
+                  <DownloadButton
+                    onClick={() => downloadVideo(video.url, video.title, 'mp4', 720)}
+                    isLoading={loadingMap[`${video.url}-mp4-720`]}
+                    isCompleted={completedMap[`${video.url}-mp4-720`]}
+                    disabled={isRestricted}
+                    label="720p"
+                  />
+                  <DownloadButton
+                    onClick={() => downloadVideo(video.url, video.title, 'mp4', 1080)}
+                    isLoading={loadingMap[`${video.url}-mp4-1080`]}
+                    isCompleted={completedMap[`${video.url}-mp4-1080`]}
+                    disabled={isRestricted}
+                    label="1080p"
+                  />
+                </div>
               </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

@@ -37,16 +37,61 @@ export async function GET(request) {
       extractorArgs: 'youtube:player_client=android', // Android 클라이언트 사용 (shorts 추출 안정성 향상)
     });
 
+    // 멤버십 전용 영상 ID 목록 수집
+    const membersOnlyIds = new Set();
+    const channelId = info.channel_id;
+    if (channelId && channelId.startsWith('UC')) {
+      const membersPlaylistId = 'UUMO' + channelId.substring(2);
+      try {
+        const membersInfo = await ytdl(`https://www.youtube.com/playlist?list=${membersPlaylistId}`, {
+          dumpSingleJson: true,
+          flatPlaylist: true,
+          playlistEnd: 100,
+          noWarnings: true,
+          callHome: false,
+          noCheckCertificate: true,
+          youtubeSkipDashManifest: true,
+        });
+        if (membersInfo && membersInfo.entries) {
+          membersInfo.entries.forEach(entry => {
+            if (entry && entry.id) {
+              membersOnlyIds.add(entry.id);
+            }
+          });
+        }
+      } catch (err) {
+        console.log('No membership playlist found or error:', err.message);
+      }
+    }
+
     // entries 배열에서 null(삭제된 영상 등) 제외하고 필요한 정보만 매핑
+    const isRestrictedTitle = (title) => {
+      if (!title) return true;
+      const lower = title.toLowerCase();
+      return (
+        lower.includes('members-only') ||
+        lower.includes('private video') ||
+        lower.includes('deleted video') ||
+        title.includes('멤버 전용') ||
+        title.includes('비공개') ||
+        title.includes('삭제된')
+      );
+    };
+
     const videos = (info.entries || [])
       .filter(Boolean)
-      .map((entry) => ({
-        id: entry.id,
-        title: entry.title,
-        url: entry.url || `https://youtube.com/watch?v=${entry.id}`,
-        thumbnail: `https://img.youtube.com/vi/${entry.id}/mqdefault.jpg`,
-        duration: entry.duration,
-      }));
+      .map((entry) => {
+        const isMembersOnly = membersOnlyIds.has(entry.id);
+        const accessible = !isMembersOnly && !isRestrictedTitle(entry.title);
+        return {
+          id: entry.id,
+          title: entry.title,
+          url: entry.url || `https://youtube.com/watch?v=${entry.id}`,
+          thumbnail: `https://img.youtube.com/vi/${entry.id}/mqdefault.jpg`,
+          duration: entry.duration,
+          accessible,
+        };
+      });
 
     return NextResponse.json({
       channel_title: info.title || info.channel || 'Untitled Channel',
