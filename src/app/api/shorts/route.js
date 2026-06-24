@@ -34,7 +34,7 @@ export async function GET(request) {
       noWarnings: true,
       callHome: false,
       noCheckCertificate: true,
-      extractorArgs: 'youtube:player_client=android', // Android 클라이언트 사용 (shorts 추출 안정성 향상)
+      extractorArgs: 'youtube:player_client=android;lang=ko', // Android 클라이언트 사용 (shorts 추출 안정성 향상) + 한국어/다국어 제목 표시 우선설정
     });
 
     // 멤버십 전용 영상 ID 목록 수집

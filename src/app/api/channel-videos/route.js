@@ -46,7 +46,7 @@ export async function GET(request) {
       noCheckCertificate: true,
       youtubeSkipDashManifest: true,        // DASH 매니페스트 생략 (속도 향상)
       sleepRequests: 0.5,                  // 요청 간 0.5초 대기 (레이트 리밋 방지)
-      extractorArgs: 'youtube:player_client=android', // Android 클라이언트 사용 (안정성 향상)
+      extractorArgs: 'youtube:player_client=android;lang=ko', // Android 클라이언트 사용 (안정성 향상) + 한국어/다국어 제목 표시 우선설정
       ignoreErrors: true,                   // 개별 영상 오류는 무시하고 계속 진행
     });
 

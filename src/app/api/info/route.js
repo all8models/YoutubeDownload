@@ -34,6 +34,7 @@ export async function GET(request) {
       noCheckCertificate: true,        // SSL 인증서 검증 건너뜀
       youtubeSkipDashManifest: true,   // DASH 매니페스트 생략 (속도 향상)
       noPlaylist: true,                // 재생목록이 아닌 단일 영상만 처리
+      extractorArgs: 'youtube:lang=ko', // 한국어/다국어 제목 표시 우선설정
     });
 
     // 오디오 전용 포맷(비디오 코덱 없음) 필터링 → MP3 다운로드용
