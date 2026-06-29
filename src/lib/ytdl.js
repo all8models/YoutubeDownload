@@ -11,6 +11,7 @@ import { create } from 'youtube-dl-exec';
 import fs from 'fs';
 import path from 'path';
 import { execSync } from 'child_process';
+import { trace, SpanStatusCode } from '@opentelemetry/api';
 
 /**
  * yt-dlp 바이너리 경로 탐색
@@ -89,11 +90,34 @@ if (ytdlBinary) {
  */
 const youtubedl = ytdlBinary ? create(ytdlBinary) : null;
 
+const tracer = trace.getTracer('youtube-downloader-ytdl');
+
 export default async function ytdl(url, flags) {
   if (!youtubedl) {
     throw new Error(
       'yt-dlp binary not found. Install it: pip3 install yt-dlp'
     );
   }
-  return youtubedl(url, flags);
+
+  return tracer.startActiveSpan('yt-dlp-execution', async (span) => {
+    try {
+      span.setAttribute('yt-dlp.url', url);
+      if (flags) {
+        span.setAttribute('yt-dlp.flags', JSON.stringify(flags));
+      }
+      
+      const result = await youtubedl(url, flags);
+      span.setStatus({ code: SpanStatusCode.OK });
+      return result;
+    } catch (error) {
+      span.recordException(error);
+      span.setStatus({
+        code: SpanStatusCode.ERROR,
+        message: error.message || 'yt-dlp execution failed',
+      });
+      throw error;
+    } finally {
+      span.end();
+    }
+  });
 }
