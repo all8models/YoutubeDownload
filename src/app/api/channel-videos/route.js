@@ -33,14 +33,13 @@ export async function GET(request) {
   }
 
   try {
-    // URL에 max_results 파라미터가 있으면 그 값을 사용, 없으면 기본 50
-    const maxResults = parseInt(searchParams.get('max_results') || '50', 10);
-    const limit = Math.min(Math.max(1, maxResults), 200); // 최소 1, 최대 200
+    // URL에 max_results 파라미터가 있으면 그 값을 사용 (기본값은 제한 없음)
+    const maxResultsParam = searchParams.get('max_results');
+    const limit = maxResultsParam ? parseInt(maxResultsParam, 10) : null;
 
-    const info = await ytdl(url, {
+    const ytdlOptions = {
       dumpSingleJson: true,                 // JSON 형태로 정보 출력
       flatPlaylist: true,                   // 채널 영상 목록만 빠르게 추출 (상세 정보 생략)
-      playlistEnd: limit,                   // 레이트 리밋 방지: 최대 N개만 가져오기
       noWarnings: true,
       callHome: false,
       noCheckCertificate: true,
@@ -48,7 +47,13 @@ export async function GET(request) {
       sleepRequests: 0.5,                  // 요청 간 0.5초 대기 (레이트 리밋 방지)
       extractorArgs: 'youtube:player_client=android;lang=ko', // Android 클라이언트 사용 (안정성 향상) + 한국어/다국어 제목 표시 우선설정
       ignoreErrors: true,                   // 개별 영상 오류는 무시하고 계속 진행
-    });
+    };
+
+    if (limit && !isNaN(limit) && limit > 0) {
+      ytdlOptions.playlistEnd = limit;      // 파라미터가 지정된 경우에만 개수 제한 적용
+    }
+
+    const info = await ytdl(url, ytdlOptions);
 
     // 멤버십 전용 영상 ID 목록 수집
     const membersOnlyIds = new Set();

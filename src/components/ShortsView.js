@@ -16,6 +16,9 @@ export default function ShortsView({ shortsData, downloadDirHandle }) {
   const [loadingMap, setLoadingMap] = useState({});    // { "videoUrl-mp3-720": true, ... }
   const [completedMap, setCompletedMap] = useState({}); // { "videoUrl-mp3-720": true, ... }
   const [error, setError] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+
+  const ITEMS_PER_PAGE = 20;
 
   /**
    * 쇼트 개별 영상 다운로드
@@ -69,6 +72,20 @@ export default function ShortsView({ shortsData, downloadDirHandle }) {
   // 데이터가 없으면 아무것도 렌더링하지 않음
   if (!shortsData || !shortsData.videos) return null;
 
+  const videos = shortsData.videos;
+  const totalVideos = videos.length;
+  const totalPages = Math.ceil(totalVideos / ITEMS_PER_PAGE);
+  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+  const currentVideos = videos.slice(startIndex, startIndex + ITEMS_PER_PAGE);
+
+  const handlePageChange = (page) => {
+    setCurrentPage(page);
+    const viewElement = document.querySelector('.shorts-view');
+    if (viewElement) {
+      viewElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
+
   return (
     <div className="shorts-view">
       {/* 쇼트 헤더 */}
@@ -83,7 +100,7 @@ export default function ShortsView({ shortsData, downloadDirHandle }) {
 
       {/* 쇼트 목록 */}
       <div className="shorts-videos">
-        {shortsData.videos.map((video) => {
+        {currentVideos.map((video) => {
           const isRestricted = video.accessible === false;
           return (
             <div key={video.id} className={`shorts-video-item glass-panel ${isRestricted ? 'restricted-item' : ''}`}>
@@ -139,6 +156,47 @@ export default function ShortsView({ shortsData, downloadDirHandle }) {
           );
         })}
       </div>
+
+      {/* 페이지네이션 네비게이션 */}
+      {totalPages > 1 && (
+        <div className="pagination-container">
+          <button
+            className="pagination-btn"
+            onClick={() => handlePageChange(1)}
+            disabled={currentPage === 1}
+            title="처음 페이지로"
+          >
+            처음으로
+          </button>
+          <button
+            className="pagination-btn"
+            onClick={() => handlePageChange(currentPage - 1)}
+            disabled={currentPage === 1}
+            title="이전 페이지"
+          >
+            이전
+          </button>
+          <span className="pagination-info">
+            {currentPage} / {totalPages} 페이지
+          </span>
+          <button
+            className="pagination-btn"
+            onClick={() => handlePageChange(currentPage + 1)}
+            disabled={currentPage === totalPages}
+            title="다음 페이지"
+          >
+            다음
+          </button>
+          <button
+            className="pagination-btn"
+            onClick={() => handlePageChange(totalPages)}
+            disabled={currentPage === totalPages}
+            title="마지막 페이지로"
+          >
+            마지막으로
+          </button>
+        </div>
+      )}
     </div>
   );
 }
