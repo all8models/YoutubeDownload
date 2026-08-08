@@ -1,30 +1,30 @@
 import { NextResponse } from 'next/server';
 import ytdl from '../../../lib/ytdl';
+import { fetchMembersOnlyIds, mapVideoEntries } from '../../../lib/youtubeHelpers';
 
 /**
  * GET /api/channel-videos?url=CHANNEL_VIDEOS_URL
  *
- * YouTube 채널의 /videos 페이지에서 업로드한 영상 목록을 반환합니다.
- * --flat-playlist 옵션으로 각 영상의 상세 정보 없이 ID, 제목, 길이만 빠르게 가져옵니다.
+ * YouTube 채널의 /videos (동영상) 페이지에서 업로드한 영상 목록 전체를 반환하는 API입니다.
+ * yt-dlp의 --flat-playlist 옵션으로 각 영상의 상세 정보 없이 메타데이터만 빠르게 가져옵니다.
  *
- * 예: https://www.youtube.com/@moyamoya_labo/videos
+ * @example
+ * GET /api/channel-videos?url=https://www.youtube.com/@channel/videos&max_results=50
  *
- * ⚠️ 레이트 리밋 방지를 위해 최대 50개 영상만 가져옵니다 (playlistEnd: 50).
- * 필요 시 ?max_results=100 파라미터로 조정 가능합니다.
+ * ⚠️ 레이트 리밋 방지를 위해 max_results 파라미터가 없으면 영상 전체를 가져오지만
+ * 처리 시간이 지연될 수 있습니다. (기본적으로 클라이언트에서 요청 시 제한이 필요할 수 있음)
  *
- * 응답 예시:
+ * @returns {JSON}
  * {
- *   channel_title: "Channel Name",
- *   video_count: 50,
- *   total_available: 561,
- *   limited: true,
- *   videos: [
- *     { id: "abc123", title: "Video 1", url: "https://youtube.com/watch?v=...", thumbnail: "...", duration: 212 },
- *     ...
- *   ]
+ *   "channel_title": "Channel Name",
+ *   "video_count": 50,
+ *   "total_available": 561,
+ *   "limited": true,
+ *   "videos": [...]
  * }
  */
 export async function GET(request) {
+  // 1. 요청 URL에서 'url' 및 'max_results' 쿼리 파라미터 파싱
   const { searchParams } = new URL(request.url);
   const url = searchParams.get('url');
 
@@ -33,95 +33,52 @@ export async function GET(request) {
   }
 
   try {
-    // URL에 max_results 파라미터가 있으면 그 값을 사용 (기본값은 제한 없음)
+    // max_results 파라미터 확인 (지정된 개수만큼만 가져와서 속도 및 리소스 최적화)
     const maxResultsParam = searchParams.get('max_results');
     const limit = maxResultsParam ? parseInt(maxResultsParam, 10) : null;
 
+    // 2. yt-dlp 실행 옵션 설정
     const ytdlOptions = {
-      dumpSingleJson: true,                 // JSON 형태로 정보 출력
-      flatPlaylist: true,                   // 채널 영상 목록만 빠르게 추출 (상세 정보 생략)
+      dumpSingleJson: true,                 // JSON 형태로 반환
+      flatPlaylist: true,                   // 채널 영상 목록만 빠르게 추출 (상세 생략)
       noWarnings: true,
       callHome: false,
       noCheckCertificate: true,
-      youtubeSkipDashManifest: true,        // DASH 매니페스트 생략 (속도 향상)
-      sleepRequests: 0.5,                  // 요청 간 0.5초 대기 (레이트 리밋 방지)
-      extractorArgs: 'youtube:player_client=android;lang=is', // Android 클라이언트 사용 (안정성 향상) + 아이슬란드어(is) 설정으로 원본 언어(영어/한국어 등) 제목 우선설정
-      ignoreErrors: true,                   // 개별 영상 오류는 무시하고 계속 진행
+      youtubeSkipDashManifest: true,        // DASH 매니페스트 생략 (속도 향상 및 불필요한 요청 제거)
+      sleepRequests: 0.5,                   // 유튜브의 안티 봇(Rate Limit) 방지를 위해 요청 간 0.5초 대기
+      extractorArgs: 'youtube:player_client=android;lang=is', // Android 클라이언트 + 원본 언어(is) 설정
+      ignoreErrors: true,                   // 개별 영상 조회 시 발생한 오류는 무시하고 계속 리스트 수집
     };
 
+    // 추출할 영상 개수에 제한이 있는 경우에만 playlistEnd 옵션을 추가합니다.
     if (limit && !isNaN(limit) && limit > 0) {
-      ytdlOptions.playlistEnd = limit;      // 파라미터가 지정된 경우에만 개수 제한 적용
+      ytdlOptions.playlistEnd = limit;
     }
 
+    // 3. yt-dlp 실행하여 채널 영상 목록 조회
     const info = await ytdl(url, ytdlOptions);
 
-    // 멤버십 전용 영상 ID 목록 수집
-    const membersOnlyIds = new Set();
-    const channelId = info.channel_id;
-    if (channelId && channelId.startsWith('UC')) {
-      const membersPlaylistId = 'UUMO' + channelId.substring(2);
-      try {
-        const membersInfo = await ytdl(`https://www.youtube.com/playlist?list=${membersPlaylistId}`, {
-          dumpSingleJson: true,
-          flatPlaylist: true,
-          playlistEnd: 100, // 최대 100개 멤버십 영상 정보만 수집
-          noWarnings: true,
-          callHome: false,
-          noCheckCertificate: true,
-          youtubeSkipDashManifest: true,
-        });
-        if (membersInfo && membersInfo.entries) {
-          membersInfo.entries.forEach(entry => {
-            if (entry && entry.id) {
-              membersOnlyIds.add(entry.id);
-            }
-          });
-        }
-      } catch (err) {
-        // 멤버십 플레이리스트가 없거나 에러 시 무시
-        console.log('No membership playlist found or error:', err.message);
-      }
-    }
+    // 4. 해당 채널의 멤버십 전용 영상 ID 목록 수집 (공통 헬퍼 함수 사용)
+    const membersOnlyIds = await fetchMembersOnlyIds(info.channel_id);
 
-    // entries 배열에서 null(삭제된 영상 등) 제외하고 필요한 정보만 매핑
-    const isRestrictedTitle = (title) => {
-      if (!title) return true;
-      const lower = title.toLowerCase();
-      return (
-        lower.includes('members-only') ||
-        lower.includes('private video') ||
-        lower.includes('deleted video') ||
-        title.includes('멤버 전용') ||
-        title.includes('비공개') ||
-        title.includes('삭제된')
-      );
-    };
+    // 5. yt-dlp 결과(entries)를 프론트엔드에서 렌더링하기 좋은 형태로 정제
+    const videos = mapVideoEntries(info.entries, membersOnlyIds);
 
-    const videos = (info.entries || [])
-      .filter(Boolean)
-      .map((entry) => {
-        const isMembersOnly = membersOnlyIds.has(entry.id);
-        const accessible = !isMembersOnly && !isRestrictedTitle(entry.title);
-        return {
-          id: entry.id,
-          title: entry.title,
-          url: entry.url || `https://youtube.com/watch?v=${entry.id}`,
-          thumbnail: `https://img.youtube.com/vi/${entry.id}/mqdefault.jpg`,
-          duration: entry.duration,
-          accessible,
-        };
-      });
+    // 전체 영상 갯수 (info.playlist_count가 있으면 해당 값, 없으면 파싱된 videos 배열 길이)
+    const totalAvailable = info.playlist_count || videos.length;
 
+    // 6. 성공적인 응답 반환 (전체 개수와 제한 여부(limited)를 함께 전달)
     return NextResponse.json({
       channel_title: info.title || info.channel || info.uploader || 'Unknown Channel',
       channel_url: info.channel_url || info.uploader_url || url,
       video_count: videos.length,
-      total_available: info.playlist_count || videos.length,
-      limited: (info.playlist_count || videos.length) > videos.length,
+      total_available: totalAvailable,
+      limited: totalAvailable > videos.length,
       videos,
     });
   } catch (error) {
     console.error('Channel videos fetch error:', error);
+    // 에러 발생 시 상태 코드 500과 상세 메시지 반환
     return NextResponse.json(
       { error: 'Failed to fetch channel videos. Make sure the URL is a valid YouTube channel videos page (e.g. https://www.youtube.com/@channel/videos).' },
       { status: 500 }

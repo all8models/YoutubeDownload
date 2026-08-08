@@ -1,15 +1,13 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import PlaylistView from '../components/PlaylistView';
-import ShortsView from '../components/ShortsView';
-import ChannelVideosView from '../components/ChannelVideosView';
+import VideoListView from '../components/VideoListView';
 import DownloadFolderPicker from '../components/DownloadFolderPicker';
-import { chooseDownloadDirectory, saveFile } from '../lib/fileDownload';
+import { chooseDownloadDirectory } from '../lib/fileDownload';
 
 /**
  * URL이 YouTube 플레이리스트인지 확인
- * URL에 'list=' 파라미터가 포함되어 있으면 플레이리스트로 간주
+ * URL에 'list=' 파라미터가 포함되어 있으면 플레이리스트로 간주합니다.
  */
 function isPlaylistUrl(url) {
   return url.includes('list=');
@@ -37,7 +35,6 @@ function isShortsUrl(url) {
 function isChannelVideosUrl(url) {
   try {
     const parsed = new URL(url);
-    // /videos 로 끝나거나 /videos/ 로 시작하는 경로 확인
     const pathParts = parsed.pathname.split('/').filter(Boolean);
     return pathParts.length > 0 && pathParts[pathParts.length - 1] === 'videos';
   } catch {
@@ -70,7 +67,7 @@ function formatChannelUrl(inputUrl) {
       if (pathParts.length === 1 && pathParts[0].startsWith('@')) {
         parsed.pathname = `/${pathParts[0]}/videos`;
         
-        // URL.toString()은 pathname을 퍼센트 인코딩하므로, 다시 decodeURIComponent로 한글을 복원하여 반환
+        // URL.toString()은 pathname을 퍼센트 인코딩하므로, 다시 decodeURIComponent로 복원
         const result = decodeURIComponent(parsed.toString());
         if (!/^https?:\/\//i.test(decoded)) {
           return result.replace(/^https?:\/\//i, '');
@@ -79,7 +76,7 @@ function formatChannelUrl(inputUrl) {
       }
     }
   } catch {
-    // URL 파싱 실패 시 정규식 대체 패턴 매칭 (한글 및 퍼센트 인코딩 글자 대응을 위해 [^/?#]+ 사용)
+    // 정규식 대체 패턴 매칭 (한글 및 인코딩 글자 대응을 위해 [^/?#]+ 사용)
     const handleRegex = /^(https?:\/\/)?(www\.)?youtube\.com\/(@[^/?#]+)\/?(\?.*)?$/i;
     try {
       const decodedInput = decodeURIComponent(inputUrl.trim());
@@ -97,24 +94,33 @@ function formatChannelUrl(inputUrl) {
 }
 
 /**
- * 메인 페이지 컴포넌트
- * - YouTube URL 입력 → 영상 정보 조회 → 포맷 선택 → 다운로드
- * - 플레이리스트 URL이면 → 영상 목록 표시 → 개별 다운로드
- * - MP3(오디오), MP4 720p, MP4 1080p 세 가지 다운로드 지원
+ * 메인 어플리케이션(Home) 페이지 컴포넌트
+ * - YouTube URL 입력에 따라 단일 영상, 플레이리스트, 채널 영상, 쇼츠를 지능적으로 분석
+ * - 상태 관리를 단순화하여 하나의 통합된 listData 상태만 사용
+ * - 통합된 VideoListView 컴포넌트를 통해 모든 목록 유형을 렌더링
  */
 export default function Home() {
-  // ─── 상태(state) 관리 ──────────────────────────────────────────
-  const [url, setUrl] = useState('');                    // 사용자가 입력한 YouTube URL
-  const [theme, setTheme] = useState('system');           // 테마 모드 ('light' | 'dark' | 'system')
+  // ─── 기본 입력 상태 (State) ──────────────────────────────────
+  const [url, setUrl] = useState('');                   // 사용자가 입력한 YouTube URL
+  const [theme, setTheme] = useState('system');         // 테마 모드 ('light' | 'dark' | 'system')
 
-  // ─── 테마 제어 및 초기화 로직 ──────────────────────────────────────
+  // ─── API 통신 및 목록 데이터 상태 (State) ──────────────────────
+  const [loadingInfo, setLoadingInfo] = useState(false); // 정보 조회 로딩 여부
+  const [error, setError] = useState('');                // 조회 실패 시 에러 메시지
+  // 기존의 playlistData, shortsData, channelData를 통합한 단일 상태 변수
+  // 구조: { title, count, videos, type }
+  const [listData, setListData] = useState(null);
+  
+  const [downloadDirHandle, setDownloadDirHandle] = useState(null); // 자동 저장할 폴더의 권한 핸들
+
+  // ─── 테마 제어 및 초기화 로직 ──────────────────────────────────
   useEffect(() => {
-    // 1. 로컬 스토리지에서 저장된 테마 불러오기
+    // 로컬 스토리지에서 테마 불러오기
     const savedTheme = localStorage.getItem('theme') || 'system';
     setTheme(savedTheme);
     applyTheme(savedTheme);
 
-    // 2. 시스템 테마 변경 감지 리스너
+    // OS 시스템 설정 변경 감지 리스너
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
     const handleSystemThemeChange = () => {
       const currentTheme = localStorage.getItem('theme') || 'system';
@@ -146,20 +152,14 @@ export default function Home() {
     localStorage.setItem('theme', newTheme);
     applyTheme(newTheme);
   };
-  const [loadingInfo, setLoadingInfo] = useState(false);  // 정보 조회 중 여부
-  const [error, setError] = useState('');                 // 에러 메시지
-  const [playlistData, setPlaylistData] = useState(null);  // 플레이리스트 정보
-  const [shortsData, setShortsData] = useState(null);      // 쇼트 정보
-  const [channelData, setChannelData] = useState(null);    // 채널 영상 목록 정보
-  const [downloadDirHandle, setDownloadDirHandle] = useState(null); // 자동 저장 폴더 핸들
 
-  // ─── 다운로드 폴더 선택 (File System Access API) ──────────────────
+  // ─── 브라우저 파일 시스템 팝업 ─────────────────────────────────
   const handleChooseFolder = async () => {
     const handle = await chooseDownloadDirectory();
     if (handle) setDownloadDirHandle(handle);
   };
 
-  // ─── 분석 버튼 클릭: URL 타입에 따라 단일 영상 / 플레이리스트 분기 ──
+  // ─── 정보 분석(fetch) 로직 ────────────────────────────────────
   const fetchInfo = async () => {
     let targetUrl = url.trim();
     if (!targetUrl) {
@@ -167,84 +167,75 @@ export default function Home() {
       return;
     }
 
-    // 투바이트(한글 등) 퍼센트 인코딩 깨짐 및 처리 오류 방지를 위해 디코딩 우선 적용
+    // 인코딩된 URL 문제를 방지하기 위한 디코딩
     try {
       targetUrl = decodeURIComponent(targetUrl);
     } catch (_) {}
 
-    // 채널 핸들 URL 자동 포맷팅 (@name -> @name/videos)
+    // 짧은 핸들 URL인 경우 자동 완성
     const formattedUrl = formatChannelUrl(targetUrl);
     targetUrl = formattedUrl;
-    setUrl(formattedUrl); // 입력창 텍스트 업데이트 (디코딩된 한국어 주소로 노출)
+    setUrl(formattedUrl);
 
     setError('');
     setLoadingInfo(true);
-    setPlaylistData(null);
-    setShortsData(null);
-    setChannelData(null);
+    setListData(null); // 기존 결과 리셋
 
-    // 쇼트 페이지 URL이면 쇼트 API 호출
-    if (isShortsUrl(targetUrl)) {
-      try {
+    try {
+      // 1. 쇼트 페이지 분석
+      if (isShortsUrl(targetUrl)) {
         const res = await fetch(`/api/shorts?url=${encodeURIComponent(targetUrl)}`);
         const data = await res.json();
-
         if (!res.ok) throw new Error(data.error || 'Failed to fetch shorts');
-
-        setShortsData(data);
-      } catch (err) {
-        setError(err.message);
-      } finally {
-        setLoadingInfo(false);
+        
+        setListData({
+          title: data.channel_title,
+          count: data.video_count,
+          videos: data.videos,
+          type: 'short',
+        });
+        return;
       }
-      return;
-    }
 
-    // 채널 /videos 페이지 URL이면 채널 영상 API 호출
-    if (isChannelVideosUrl(targetUrl)) {
-      try {
+      // 2. 채널 비디오 목록 분석
+      if (isChannelVideosUrl(targetUrl)) {
         const res = await fetch(`/api/channel-videos?url=${encodeURIComponent(targetUrl)}`);
         const data = await res.json();
-
         if (!res.ok) throw new Error(data.error || 'Failed to fetch channel videos');
-
-        setChannelData(data);
-      } catch (err) {
-        setError(err.message);
-      } finally {
-        setLoadingInfo(false);
+        
+        setListData({
+          title: data.channel_title,
+          count: data.video_count,
+          videos: data.videos,
+          type: 'video',
+        });
+        return;
       }
-      return;
-    }
 
-    // 플레이리스트 URL이면 플레이리스트 API 호출
-    if (isPlaylistUrl(targetUrl)) {
-      try {
+      // 3. 플레이리스트 분석
+      if (isPlaylistUrl(targetUrl)) {
         const res = await fetch(`/api/playlist?url=${encodeURIComponent(targetUrl)}`);
         const data = await res.json();
-
         if (!res.ok) throw new Error(data.error || 'Failed to fetch playlist info');
-
-        setPlaylistData(data);
-      } catch (err) {
-        setError(err.message);
-      } finally {
-        setLoadingInfo(false);
+        
+        setListData({
+          title: data.playlist_title,
+          count: data.video_count,
+          videos: data.videos,
+          type: 'video',
+        });
+        return;
       }
-      return;
-    }
 
-    // ─── 단일 영상: 기존 info API 호출 ──────────────────────────
-    try {
+      // 4. 일반 단일 영상 분석 (Fallback)
       const res = await fetch(`/api/info?url=${encodeURIComponent(targetUrl)}`);
       const data = await res.json();
-
       if (!res.ok) throw new Error(data.error || 'Failed to fetch video info');
 
-      // 단일 영상을 플레이리스트 구조로 통일하여 PlaylistView를 통해 렌더링
-      setPlaylistData({
-        playlist_title: "단일 영상 분석 결과 (Single Video)",
-        video_count: 1,
+      // 단일 영상도 목록 형태로 구조화하여 VideoListView에 던져줍니다.
+      setListData({
+        title: "단일 영상 분석 결과 (Single Video)",
+        count: 1,
         videos: [
           {
             id: data.id || data.url || targetUrl,
@@ -252,22 +243,24 @@ export default function Home() {
             url: data.url || targetUrl,
             thumbnail: data.thumbnail,
             duration: data.duration,
-            accessible: true // 단일 영상 정보 로드 성공 시 접근 가능한 것으로 간주
-          }
-        ]
+            accessible: true,
+          },
+        ],
+        type: 'video',
       });
+
     } catch (err) {
       setError(err.message);
     } finally {
-      setLoadingInfo(false);
+      setLoadingInfo(false); // 로딩 스피너 종료
     }
   };
 
-  // ─── UI 렌더링 ─────────────────────────────────────────────────
+  // ─── 렌더링 파트 ─────────────────────────────────────────────
   return (
-    <div className={`container ${playlistData || shortsData || channelData ? 'container-wide' : ''}`}>
+    <div className={`container ${listData ? 'container-wide' : ''}`}>
       <div className="glass-panel">
-        {/* 테마 스위처 (Segmented Control) */}
+        {/* 테마 스위처 */}
         <div className="theme-header">
           <div className="theme-selector-container">
             <button 
@@ -296,7 +289,7 @@ export default function Home() {
 
         <h1>YouTube to MP3 / MP4</h1>
         
-        {/* URL 입력 + 분석 버튼 */}
+        {/* URL 입력 필드 및 분석 버튼 */}
         <div className="input-group">
           <input 
             type="text" 
@@ -310,27 +303,24 @@ export default function Home() {
           </button>
         </div>
         
+        {/* 에러 발생 시 빨간색 경고 문구 출력 */}
         {error && <p className="error-message">{error}</p>}
         
-        {/* 다운로드 폴더 선택 버튼 */}
+        {/* 다량 다운로드 시 편의를 위한 폴더 지정 컴포넌트 */}
         <DownloadFolderPicker 
           onSelect={handleChooseFolder} 
           selected={!!downloadDirHandle} 
         />
         
-        {/* 플레이리스트 모드 (단일 영상 포함): 영상 목록 + 개별 다운로드 버튼 */}
-        {playlistData && (
-          <PlaylistView playlistData={playlistData} downloadDirHandle={downloadDirHandle} />
-        )}
-        
-        {/* 쇼트 모드: 쇼트 목록 + 개별 다운로드 버튼 */}
-        {shortsData && (
-          <ShortsView shortsData={shortsData} downloadDirHandle={downloadDirHandle} />
-        )}
-        
-        {/* 채널 영상 목록 모드: 영상 목록 + 개별 다운로드 버튼 */}
-        {channelData && (
-          <ChannelVideosView channelData={channelData} downloadDirHandle={downloadDirHandle} />
+        {/* 데이터 페칭 완료 시 통합된 VideoListView 렌더링 */}
+        {listData && (
+          <VideoListView 
+            title={listData.title}
+            count={listData.count}
+            videos={listData.videos}
+            listType={listData.type}
+            downloadDirHandle={downloadDirHandle}
+          />
         )}
       </div>
     </div>
