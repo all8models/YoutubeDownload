@@ -32,7 +32,7 @@ export async function GET(request) {
       noWarnings: true,
       callHome: false,
       noCheckCertificate: true,
-      extractorArgs: 'youtube:lang=ko', // 한국어/다국어 제목 표시 우선설정
+      extractorArgs: 'youtube:lang=is', // 아이슬란드어(is) 설정으로 원본 언어(영어/한국어 등) 제목 우선설정
     });
 
     // 멤버십 전용 영상 ID 목록 수집
