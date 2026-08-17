@@ -66,6 +66,8 @@ export async function GET(request) {
     ];
 
     return NextResponse.json({
+      id: info.id,
+      url: info.webpage_url || info.original_url || url,
       title: info.title,
       thumbnail: info.thumbnail,
       duration: info.duration,

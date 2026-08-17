@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import DownloadButton from './DownloadButton';
-import { saveFile } from '../lib/fileDownload';
+import { saveResponseStream } from '../lib/fileDownload';
 
 /**
  * 범용 비디오 목록 뷰 컴포넌트 (VideoListView)
@@ -60,15 +60,12 @@ export default function VideoListView({ title, count, videos, listType = 'video'
         throw new Error(data.error || 'Download failed');
       }
 
-      // 서버로부터 받은 바이너리 데이터를 Blob 객체로 변환
-      const blob = await res.blob();
-      
       // 파일 시스템 저장 시 문제를 일으킬 수 있는 특수문자를 하이픈(-)으로 치환합니다.
       const safeTitle = (videoTitle || listType).replace(/[/\\?%*:|"<>]/g, '-');
       const ext = type === 'mp3' ? '.mp3' : '.mp4';
       
-      // File System Access API를 통한 다운로드 실행
-      await saveFile(blob, `${safeTitle}${ext}`, downloadDirHandle);
+      // 제로 버퍼 다이렉트 스트리밍 저장 실행 (RAM 적재 없이 즉시 디스크 파이핑)
+      await saveResponseStream(res, `${safeTitle}${ext}`, downloadDirHandle);
       
       // 성공적으로 저장되면 해당 버튼을 완료(V) 상태로 변경
       setCompletedMap((prev) => ({ ...prev, [loadKey]: true }));

@@ -57,8 +57,8 @@ export async function GET(request) {
 
       const ffmpegPath = path.join(process.cwd(), 'node_modules', 'ffmpeg-static', 'ffmpeg');
       
-      // yt-dlp format 지정: 지정된 해상도 이하의 영상 + 최고 음성 병합
-      const format = `bestvideo[height<=${targetQuality}]+bestaudio/best[height<=${targetQuality}]`;
+      // yt-dlp format 지정: MP4 호환 스트림(avc1+m4a)을 우선 매칭하여 ffmpeg 재인코딩 없이 초고속 Muxing
+      const format = `bestvideo[ext=mp4][height<=${targetQuality}]+bestaudio[ext=m4a]/bestvideo[height<=${targetQuality}]+bestaudio/best[height<=${targetQuality}]`;
       
       const tempDir = path.join(process.cwd(), 'tmp');
       if (!fs.existsSync(tempDir)) {
@@ -134,6 +134,9 @@ export async function GET(request) {
         statusCode = 403;
       } else if (errStr.includes('Join this channel to get access')) {
         errorMessage = '이 영상은 멤버십 전용 동영상이라 다운로드할 수 없습니다.';
+        statusCode = 403;
+      } else if (errStr.includes('HTTP Error 403') || errStr.includes('403: Forbidden')) {
+        errorMessage = '유튜브 스트림 접근이 일시적으로 제한되었습니다 (HTTP 403). 잠시 후 다시 시도해주세요.';
         statusCode = 403;
       }
 

@@ -125,6 +125,9 @@ export async function POST(request) {
       } else if (errStr.includes('Join this channel to get access')) {
         errorMessage = '이 영상은 멤버십 전용 동영상이라 다운로드할 수 없습니다.';
         statusCode = 403;
+      } else if (errStr.includes('HTTP Error 403') || errStr.includes('403: Forbidden')) {
+        errorMessage = '유튜브 스트림 접근이 일시적으로 제한되었습니다 (HTTP 403). 잠시 후 다시 시도해주세요.';
+        statusCode = 403;
       }
 
       return NextResponse.json({ error: errorMessage }, { status: statusCode });
@@ -236,6 +239,9 @@ export async function GET(request) {
         statusCode = 403;
       } else if (errStr.includes('Join this channel to get access')) {
         errorMessage = '이 영상은 멤버십 전용 동영상이라 다운로드할 수 없습니다.';
+        statusCode = 403;
+      } else if (errStr.includes('HTTP Error 403') || errStr.includes('403: Forbidden')) {
+        errorMessage = '유튜브 스트림 접근이 일시적으로 제한되었습니다 (HTTP 403). 잠시 후 다시 시도해주세요.';
         statusCode = 403;
       }
 

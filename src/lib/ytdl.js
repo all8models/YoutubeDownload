@@ -92,21 +92,27 @@ const youtubedl = ytdlBinary ? create(ytdlBinary) : null;
 
 const tracer = trace.getTracer('youtube-downloader-ytdl');
 
-export default async function ytdl(url, flags) {
+export default async function ytdl(url, flags = {}) {
   if (!youtubedl) {
     throw new Error(
       'yt-dlp binary not found. Install it: pip3 install yt-dlp'
     );
   }
 
+  // yt-dlp 안정적인 다운로드 및 멀티스레드 병렬 다운로드 옵션
+  const mergedFlags = {
+    retries: 5,
+    fragmentRetries: 5,
+    concurrentFragments: 4, // 4개 스레드 병렬 조각 다운로드로 속도 대폭 향상
+    ...flags,
+  };
+
   return tracer.startActiveSpan('yt-dlp-execution', async (span) => {
     try {
       span.setAttribute('yt-dlp.url', url);
-      if (flags) {
-        span.setAttribute('yt-dlp.flags', JSON.stringify(flags));
-      }
+      span.setAttribute('yt-dlp.flags', JSON.stringify(mergedFlags));
       
-      const result = await youtubedl(url, flags);
+      const result = await youtubedl(url, mergedFlags);
       span.setStatus({ code: SpanStatusCode.OK });
       return result;
     } catch (error) {

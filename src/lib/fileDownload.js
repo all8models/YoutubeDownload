@@ -116,6 +116,39 @@ export async function saveFile(blob, filename, dirHandle) {
 }
 
 /**
+ * Fetch Response의 ReadableStream을 RAM 버퍼링 없이 디스크로 즉시 스트리밍 저장 (Zero-Buffer Direct Streaming)
+ * @param {Response} response               - fetch Response 객체
+ * @param {string} filename                 - 저장할 파일명
+ * @param {FileSystemDirectoryHandle|null} dirHandle - 폴더 핸들
+ * @returns {Promise<{method: string, filename: string}>}
+ */
+export async function saveResponseStream(response, filename, dirHandle) {
+  // 1. File System Access API 지원 & 폴더 핸들 존재 시: 스트림 직결 파이핑
+  if (dirHandle && typeof dirHandle.getFileHandle === 'function' && response.body && typeof response.body.pipeTo === 'function') {
+    try {
+      let finalName = filename;
+      if (await fileExists(dirHandle, filename)) {
+        const result = await handleDuplicateFile(dirHandle, filename);
+        finalName = result.filename;
+      }
+
+      const fileHandle = await dirHandle.getFileHandle(finalName, { create: true });
+      const writable = await fileHandle.createWritable();
+      
+      // 브라우저 메모리에 담아두지 않고 디스크로 바로 파이핑
+      await response.body.pipeTo(writable);
+      return { method: 'filesystem-stream', filename: finalName };
+    } catch (err) {
+      console.error('Direct stream piping failed, falling back to blob download:', err);
+    }
+  }
+
+  // 2. 폴백: Blob으로 변환 후 다운로드
+  const blob = await response.blob();
+  return saveFile(blob, filename, dirHandle);
+}
+
+/**
  * File System Access API 지원 여부 확인
  * @returns {boolean}
  */

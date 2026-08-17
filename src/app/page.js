@@ -14,14 +14,19 @@ function isPlaylistUrl(url) {
 }
 
 /**
- * URL이 YouTube Shorts 페이지인지 확인
- * - @channel/shorts (채널 쇼트 페이지)
- * - /shorts/VIDEO_ID (단일 쇼트)
+ * URL이 YouTube 쇼츠(Shorts) 목록 페이지인지 확인
+ * - @channel/shorts (채널 쇼트 목록 페이지) → 쇼트 목록 API(/api/shorts) 사용
+ * - /shorts/VIDEO_ID (단일 쇼트 영상) → 단일 영상 API(/api/info) 사용
+ *
+ * 채널 쇼트 목록 페이지는 경로가 '/shorts'로 끝나는 반면,
+ * 단일 쇼트 영상은 '/shorts/VIDEO_ID' 형태이므로 이를 구분해야 합니다.
  */
 function isShortsUrl(url) {
   try {
     const parsed = new URL(url);
-    return parsed.pathname.includes('/shorts');
+    const pathParts = parsed.pathname.split('/').filter(Boolean);
+    // 경로가 'shorts'로 끝나는 경우에만 쇼트 목록 페이지로 간주
+    return pathParts.length >= 2 && pathParts[pathParts.length - 1] === 'shorts';
   } catch {
     return false;
   }

@@ -1,47 +1,60 @@
 import ytdl from './ytdl';
 
+// 멤버십 ID 캐시 (TTL: 10분)
+const membersCache = new Map();
+const MEMBERS_CACHE_TTL = 10 * 60 * 1000;
+
 /**
  * 유튜브 멤버십 전용(Members-only) 영상들의 ID 목록을 수집하는 함수입니다.
  * 채널 ID가 'UC'로 시작할 경우, 'UUMO' 접두사로 변환하면 멤버십 전용 플레이리스트에 접근할 수 있습니다.
  * 이를 활용하여 멤버십 전용 영상인지 아닌지를 판별하기 위한 ID Set을 반환합니다.
+ * (10분 인메모리 캐시를 적용하여 중복 yt-dlp 호출 방지)
  * 
  * @param {string} channelId - 유튜브 채널의 고유 ID (예: 'UC1234567890abcdef')
  * @returns {Promise<Set<string>>} - 멤버십 전용 영상들의 ID가 담긴 Set 객체
  */
 export async function fetchMembersOnlyIds(channelId) {
-  const membersOnlyIds = new Set();
-  
-  // 채널 ID가 UC로 시작하는 정상적인 ID인지 확인합니다.
-  if (channelId && channelId.startsWith('UC')) {
-    // 멤버십 전용 플레이리스트 ID는 'UC' 대신 'UUMO'를 사용합니다.
-    const membersPlaylistId = 'UUMO' + channelId.substring(2);
-    
-    try {
-      // yt-dlp를 사용하여 멤버십 플레이리스트의 메타데이터(최대 100개)를 빠르게 가져옵니다.
-      const membersInfo = await ytdl(`https://www.youtube.com/playlist?list=${membersPlaylistId}`, {
-        dumpSingleJson: true,
-        flatPlaylist: true,
-        playlistEnd: 100, // 최대 100개까지만 검사하여 API 요청 시간을 절약합니다.
-        noWarnings: true,
-        callHome: false,
-        noCheckCertificate: true,
-        youtubeSkipDashManifest: true,
-      });
-      
-      // 가져온 영상 목록에서 ID만 추출하여 Set에 저장합니다.
-      if (membersInfo && membersInfo.entries) {
-        membersInfo.entries.forEach(entry => {
-          if (entry && entry.id) {
-            membersOnlyIds.add(entry.id);
-          }
-        });
-      }
-    } catch (err) {
-      // 해당 채널이 멤버십을 운영하지 않거나 권한이 없는 경우 오류가 발생할 수 있습니다.
-      // 이 경우 프로그램이 중단되지 않도록 조용히 넘깁니다.
-      console.log('No membership playlist found or error:', err.message);
-    }
+  if (!channelId || !channelId.startsWith('UC')) {
+    return new Set();
   }
+
+  const now = Date.now();
+  const cached = membersCache.get(channelId);
+  if (cached && now - cached.timestamp < MEMBERS_CACHE_TTL) {
+    return cached.data;
+  }
+
+  const membersOnlyIds = new Set();
+  const membersPlaylistId = 'UUMO' + channelId.substring(2);
+  
+  try {
+    // yt-dlp를 사용하여 멤버십 플레이리스트의 메타데이터(최대 100개)를 빠르게 가져옵니다.
+    const membersInfo = await ytdl(`https://www.youtube.com/playlist?list=${membersPlaylistId}`, {
+      dumpSingleJson: true,
+      flatPlaylist: true,
+      playlistEnd: 100, // 최대 100개까지만 검사하여 API 요청 시간을 절약합니다.
+      noWarnings: true,
+      callHome: false,
+      noCheckCertificate: true,
+      youtubeSkipDashManifest: true,
+    });
+    
+    // 가져온 영상 목록에서 ID만 추출하여 Set에 저장합니다.
+    if (membersInfo && membersInfo.entries) {
+      membersInfo.entries.forEach(entry => {
+        if (entry && entry.id) {
+          membersOnlyIds.add(entry.id);
+        }
+      });
+    }
+  } catch (err) {
+    // 해당 채널이 멤버십을 운영하지 않거나 권한이 없는 경우 오류가 발생할 수 있습니다.
+    // 이 경우 프로그램이 중단되지 않도록 조용히 넘깁니다.
+    console.log('No membership playlist found or error:', err.message);
+  }
+
+  // 캐시 저장
+  membersCache.set(channelId, { data: membersOnlyIds, timestamp: now });
   
   return membersOnlyIds;
 }

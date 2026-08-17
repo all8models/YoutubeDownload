@@ -47,8 +47,17 @@ export async function GET(request) {
     // 3. 해당 채널의 멤버십 전용 영상 ID 목록 수집 (공통 헬퍼 함수 사용)
     const membersOnlyIds = await fetchMembersOnlyIds(info.channel_id);
 
-    // 4. yt-dlp 결과(entries)를 프론트엔드에서 렌더링하기 좋은 형태로 정제
-    const videos = mapVideoEntries(info.entries, membersOnlyIds);
+    // 4. yt-dlp 결과를 프론트엔드에서 렌더링하기 좋은 형태로 정제
+    //    - 채널 쇼트 페이지: info.entries (영상 목록)
+    //    - 단일 쇼트 영상 URL이 전달된 경우: entries 없이 단일 영상 객체만 반환됨 → 단일 항목 목록으로 구성
+    let videos;
+    if (Array.isArray(info.entries) && info.entries.length > 0) {
+      videos = mapVideoEntries(info.entries, membersOnlyIds);
+    } else if (info.id) {
+      videos = mapVideoEntries([info], membersOnlyIds);
+    } else {
+      videos = [];
+    }
 
     // 5. 성공적인 응답 반환
     return NextResponse.json({
