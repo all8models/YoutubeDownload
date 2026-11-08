@@ -23,6 +23,9 @@ COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 
+# 런타임 이미지에서도 최신 yt-dlp nightly 버전 보장
+RUN /app/node_modules/youtube-dl-exec/bin/yt-dlp --update-to nightly || true
+
 EXPOSE 3000
 ENV PORT=3000
 

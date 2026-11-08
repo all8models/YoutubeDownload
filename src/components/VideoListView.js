@@ -2,7 +2,29 @@
 
 import { useState } from 'react';
 import DownloadButton from './DownloadButton';
-import { saveResponseStream } from '../lib/fileDownload';
+import {
+  saveResponseStream,
+  prepareDirectoryTarget,
+  triggerNativeBrowserDownload,
+} from '../lib/fileDownload';
+
+/**
+ * 일시적 네트워크/Keep-Alive 소켓 끊김(TypeError: Failed to fetch) 시 자동 재시도하는 fetch 래퍼
+ */
+async function fetchWithRetry(url, options = {}, retries = 1) {
+  let lastError;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await fetch(url, { cache: 'no-store', ...options });
+    } catch (err) {
+      lastError = err;
+      if (attempt < retries) {
+        await new Promise((r) => setTimeout(r, 300));
+      }
+    }
+  }
+  throw lastError;
+}
 
 /**
  * 범용 비디오 목록 뷰 컴포넌트 (VideoListView)
@@ -43,29 +65,49 @@ export default function VideoListView({ title, count, videos, listType = 'video'
     setLoadingMap((prev) => ({ ...prev, [loadKey]: true }));
     setError('');
 
-    try {
-      let endpoint;
-      // 다운로드 타입에 따라 API 엔드포인트를 동적으로 분기합니다.
-      if (type === 'mp3') {
-        // bestaudio: yt-dlp가 최적의 오디오 스트림을 자동 선택합니다.
-        endpoint = `/api/download?url=${encodeURIComponent(videoUrl)}&format_id=bestaudio`;
-      } else {
-        endpoint = `/api/download/mp4?url=${encodeURIComponent(videoUrl)}&quality=${quality}`;
-      }
+    let endpoint;
+    // 다운로드 타입에 따라 API 엔드포인트를 동적으로 분기합니다.
+    if (type === 'mp3') {
+      // bestaudio: yt-dlp가 최적의 오디오 스트림을 자동 선택합니다.
+      endpoint = `/api/download?url=${encodeURIComponent(videoUrl)}&format_id=bestaudio`;
+    } else {
+      endpoint = `/api/download/mp4?url=${encodeURIComponent(videoUrl)}&quality=${quality}`;
+    }
 
-      const res = await fetch(endpoint, { method: 'GET' });
+    // 파일 시스템 저장 시 문제를 일으킬 수 있는 특수문자를 하이픈(-)으로 치환합니다.
+    const safeTitle = (videoTitle || listType).replace(/[/\\?%*:|"<>]/g, '-');
+    const ext = type === 'mp3' ? '.mp3' : '.mp4';
+    const targetFilename = `${safeTitle}${ext}`;
+
+    try {
+      // 1. 서버 변환 대기(5초 이상) 전에 사용자 클릭 제스처가 살아있을 때 폴더 권한 및 중복 파일명 확인
+      const { validDirHandle, finalName } = await prepareDirectoryTarget(
+        targetFilename,
+        downloadDirHandle
+      );
+
+      // 2. 다운로드 스트림 요청 (Keep-Alive 끊김 대비 1회 자동 재시도)
+      let res;
+      try {
+        res = await fetchWithRetry(endpoint, { method: 'GET' }, 1);
+      } catch (fetchErr) {
+        // fetch 자체가 브라우저 네트워크/확장프로그램 등에 의해 중단된 경우 네이티브 다운로드로 폴백
+        console.warn('Fetch stream failed, triggering native browser download:', fetchErr);
+        triggerNativeBrowserDownload(endpoint, targetFilename);
+        setCompletedMap((prev) => ({ ...prev, [loadKey]: true }));
+        return;
+      }
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({ error: 'Download failed' }));
         throw new Error(data.error || 'Download failed');
       }
 
-      // 파일 시스템 저장 시 문제를 일으킬 수 있는 특수문자를 하이픈(-)으로 치환합니다.
-      const safeTitle = (videoTitle || listType).replace(/[/\\?%*:|"<>]/g, '-');
-      const ext = type === 'mp3' ? '.mp3' : '.mp4';
-      
-      // 제로 버퍼 다이렉트 스트리밍 저장 실행 (RAM 적재 없이 즉시 디스크 파이핑)
-      await saveResponseStream(res, `${safeTitle}${ext}`, downloadDirHandle);
+      // 3. 제로 버퍼 다이렉트 스트리밍 저장 실행 (RAM 적재 없이 즉시 디스크 파이핑)
+      await saveResponseStream(res, targetFilename, validDirHandle, {
+        preResolvedName: finalName,
+        fallbackUrl: endpoint,
+      });
       
       // 성공적으로 저장되면 해당 버튼을 완료(V) 상태로 변경
       setCompletedMap((prev) => ({ ...prev, [loadKey]: true }));
@@ -95,12 +137,14 @@ export default function VideoListView({ title, count, videos, listType = 'video'
   // 영상 목록이 유효하지 않은 경우 렌더링을 중단합니다.
   if (!videos || !Array.isArray(videos) || videos.length === 0) return null;
 
-  // 페이지네이션 처리 계산 로직
+  // 페이지네이션 처리 계산 로직 (목록 크기 변경 시 안전한 범위로 클램핑)
   const totalVideos = videos.length;
-  const totalPages = Math.ceil(totalVideos / ITEMS_PER_PAGE);
-  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+  const totalPages = Math.max(1, Math.ceil(totalVideos / ITEMS_PER_PAGE));
+  const safeCurrentPage = Math.min(Math.max(1, currentPage), totalPages);
+  const startIndex = (safeCurrentPage - 1) * ITEMS_PER_PAGE;
   // 전체 배열에서 현재 페이지에 해당하는 부분 배열만 잘라내어 렌더링합니다.
   const currentVideos = videos.slice(startIndex, startIndex + ITEMS_PER_PAGE);
+  const isShortsList = listType === 'short';
 
   /**
    * 페이지 번호를 변경하고 리스트 뷰 상단으로 스무스 스크롤을 수행합니다.
@@ -133,9 +177,10 @@ export default function VideoListView({ title, count, videos, listType = 'video'
           
           return (
             <div key={video.id} className={`playlist-video-item glass-panel ${isRestricted ? 'restricted-item' : ''}`}>
-              <div className="playlist-thumbnail-wrapper">
+              <div className={isShortsList ? 'shorts-thumbnail-wrapper' : 'playlist-thumbnail-wrapper'}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                   className="playlist-thumbnail"
+                   className={isShortsList ? 'shorts-thumbnail' : 'playlist-thumbnail'}
                    src={video.thumbnail}
                    alt={video.title}
                    loading="lazy" // 브라우저 네이티브 지연 로딩을 통한 성능 최적화
@@ -198,28 +243,28 @@ export default function VideoListView({ title, count, videos, listType = 'video'
           <button
             className="pagination-btn"
             onClick={() => handlePageChange(1)}
-            disabled={currentPage === 1}
+            disabled={safeCurrentPage === 1}
             title="처음 페이지로"
           >
             처음으로
           </button>
           <button
             className="pagination-btn"
-            onClick={() => handlePageChange(currentPage - 1)}
-            disabled={currentPage === 1}
+            onClick={() => handlePageChange(safeCurrentPage - 1)}
+            disabled={safeCurrentPage === 1}
             title="이전 페이지"
           >
             이전
           </button>
           
           <span className="pagination-info">
-            {currentPage} / {totalPages} 페이지
+            {safeCurrentPage} / {totalPages} 페이지
           </span>
           
           <button
             className="pagination-btn"
-            onClick={() => handlePageChange(currentPage + 1)}
-            disabled={currentPage === totalPages}
+            onClick={() => handlePageChange(safeCurrentPage + 1)}
+            disabled={safeCurrentPage === totalPages}
             title="다음 페이지"
           >
             다음
@@ -227,7 +272,7 @@ export default function VideoListView({ title, count, videos, listType = 'video'
           <button
             className="pagination-btn"
             onClick={() => handlePageChange(totalPages)}
-            disabled={currentPage === totalPages}
+            disabled={safeCurrentPage === totalPages}
             title="마지막 페이지로"
           >
             마지막으로

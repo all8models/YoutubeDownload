@@ -1,8 +1,9 @@
 /**
- * yt-dlp 실행 래퍼 (Wrapper)
+ * yt-dlp & ffmpeg 실행 래퍼 (Wrapper)
  *
- * - Docker(Debian Bookworm, Python 3.11): node_modules 번들 yt-dlp 그대로 사용
+ * - Docker(Debian Bookworm, Python 3.11): node_modules 번들 yt-dlp 및 시스템/번들 ffmpeg 자동 감지
  * - macOS (시스템 Python 3.9): Homebrew Python 3.12 기반 yt-dlp 사용
+ * - 동시성 제어(Semaphore)를 통해 무분별한 서브프로세스 스폰으로 인한 CPU/메모리 고갈(DoS) 방지
  *
  * 모든 API 라우트는 이 파일을 통해 youtube-dl-exec를 사용해야 합니다.
  */
@@ -24,7 +25,10 @@ import { trace, SpanStatusCode } from '@opentelemetry/api';
  */
 function findYtdlBinary() {
   // 1. 환경 변수
-  if (process.env.YOUTUBE_DL_BIN && fs.existsSync(process.env.YOUTUBE_DL_BIN)) {
+  if (
+    process.env.YOUTUBE_DL_BIN &&
+    fs.existsSync(/*turbopackIgnore: true*/ process.env.YOUTUBE_DL_BIN)
+  ) {
     return process.env.YOUTUBE_DL_BIN;
   }
 
@@ -42,7 +46,7 @@ function findYtdlBinary() {
         if (major < 3 || (major === 3 && minor < 10)) {
           // Python 3.9 이하 → Homebrew yt-dlp 사용
           const homebrewPath = '/opt/homebrew/bin/yt-dlp';
-          if (fs.existsSync(homebrewPath)) {
+          if (fs.existsSync(/*turbopackIgnore: true*/ homebrewPath)) {
             return homebrewPath;
           }
         }
@@ -55,34 +59,82 @@ function findYtdlBinary() {
   // 3. system PATH
   try {
     const whichPath = execSync('which yt-dlp', { encoding: 'utf8' }).trim();
-    if (whichPath && fs.existsSync(whichPath)) {
+    if (whichPath && fs.existsSync(/*turbopackIgnore: true*/ whichPath)) {
       return whichPath;
     }
   } catch {}
 
   // 4. npm 번들 (Docker / Python 3.10+ 환경에서 정상 동작)
   const bundledPath = path.join(
-    process.cwd(),
+    /*turbopackIgnore: true*/ process.cwd(),
     'node_modules',
     'youtube-dl-exec',
     'bin',
     'yt-dlp'
   );
-  if (fs.existsSync(bundledPath)) {
+  if (fs.existsSync(/*turbopackIgnore: true*/ bundledPath)) {
     return bundledPath;
   }
 
   return null;
 }
 
+/**
+ * ffmpeg 바이너리 경로 탐색
+ *
+ * 우선순위:
+ * 1. FFMPEG_BIN 환경 변수
+ * 2. node_modules/ffmpeg-static/ffmpeg (로컬 개발 환경)
+ * 3. 시스템 PATH (/usr/bin/ffmpeg, /opt/homebrew/bin/ffmpeg 등 - Docker Standalone 환경)
+ */
+function findFfmpegBinary() {
+  if (
+    process.env.FFMPEG_BIN &&
+    fs.existsSync(/*turbopackIgnore: true*/ process.env.FFMPEG_BIN)
+  ) {
+    return process.env.FFMPEG_BIN;
+  }
+
+  const bundledFfmpeg = path.join(
+    /*turbopackIgnore: true*/ process.cwd(),
+    'node_modules',
+    'ffmpeg-static',
+    process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'
+  );
+  if (fs.existsSync(/*turbopackIgnore: true*/ bundledFfmpeg)) {
+    return bundledFfmpeg;
+  }
+
+  const commonPaths = ['/usr/bin/ffmpeg', '/usr/local/bin/ffmpeg', '/opt/homebrew/bin/ffmpeg'];
+  for (const candidate of commonPaths) {
+    if (fs.existsSync(/*turbopackIgnore: true*/ candidate)) {
+      return candidate;
+    }
+  }
+
+  try {
+    const whichFfmpeg = execSync('which ffmpeg', { encoding: 'utf8' }).trim();
+    if (whichFfmpeg && fs.existsSync(/*turbopackIgnore: true*/ whichFfmpeg)) {
+      return whichFfmpeg;
+    }
+  } catch {}
+
+  return null;
+}
+
 const ytdlBinary = findYtdlBinary();
+export const ffmpegBinary = findFfmpegBinary();
 
 if (ytdlBinary) {
-  console.log(`[ytdl] Using: ${ytdlBinary}`);
+  console.log(`[ytdl] Using yt-dlp: ${ytdlBinary}`);
 } else {
   console.error(
     '[ytdl] yt-dlp not found. macOS: pip3 install yt-dlp / Linux: apt install yt-dlp'
   );
+}
+
+if (ffmpegBinary) {
+  console.log(`[ytdl] Using ffmpeg: ${ffmpegBinary}`);
 }
 
 /**
@@ -92,11 +144,45 @@ const youtubedl = ytdlBinary ? create(ytdlBinary) : null;
 
 const tracer = trace.getTracer('youtube-downloader-ytdl');
 
+/**
+ * 경량 세마포어(Semaphore)를 통한 yt-dlp 동시 프로세스 수 제한
+ * 다수의 동시 요청 시 서버 CPU/메모리 스파이크 방지
+ */
+const MAX_CONCURRENT_YTDL = Math.max(
+  1,
+  parseInt(process.env.YTDL_MAX_CONCURRENCY || '4', 10) || 4
+);
+let activeCount = 0;
+const waitQueue = [];
+
+function acquireSlot() {
+  if (activeCount < MAX_CONCURRENT_YTDL) {
+    activeCount += 1;
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => {
+    waitQueue.push(resolve);
+  });
+}
+
+function releaseSlot() {
+  if (waitQueue.length > 0) {
+    const next = waitQueue.shift();
+    next();
+  } else {
+    activeCount = Math.max(0, activeCount - 1);
+  }
+}
+
 export default async function ytdl(url, flags = {}) {
   if (!youtubedl) {
     throw new Error(
       'yt-dlp binary not found. Install it: pip3 install yt-dlp'
     );
+  }
+
+  if (typeof url !== 'string' || url.trim().startsWith('-')) {
+    throw new Error('Invalid URL parameter');
   }
 
   // yt-dlp 안정적인 다운로드 및 멀티스레드 병렬 다운로드 옵션
@@ -107,23 +193,38 @@ export default async function ytdl(url, flags = {}) {
     ...flags,
   };
 
-  return tracer.startActiveSpan('yt-dlp-execution', async (span) => {
-    try {
-      span.setAttribute('yt-dlp.url', url);
-      span.setAttribute('yt-dlp.flags', JSON.stringify(mergedFlags));
-      
-      const result = await youtubedl(url, mergedFlags);
-      span.setStatus({ code: SpanStatusCode.OK });
-      return result;
-    } catch (error) {
-      span.recordException(error);
-      span.setStatus({
-        code: SpanStatusCode.ERROR,
-        message: error.message || 'yt-dlp execution failed',
-      });
-      throw error;
-    } finally {
-      span.end();
-    }
-  });
+  // SSL 인증서 검증 우회는 환경변수(YTDL_NO_CHECK_CERTIFICATE=true)가 설정된 경우에만 활성화 (기본값: false로 MITM 방어)
+  if (
+    mergedFlags.noCheckCertificate === undefined &&
+    process.env.YTDL_NO_CHECK_CERTIFICATE === 'true'
+  ) {
+    mergedFlags.noCheckCertificate = true;
+  }
+
+  await acquireSlot();
+  try {
+    return await tracer.startActiveSpan('yt-dlp-execution', async (span) => {
+      try {
+        span.setAttribute('yt-dlp.url', url);
+        span.setAttribute('yt-dlp.flags', JSON.stringify(mergedFlags));
+        span.setAttribute('yt-dlp.active_concurrency', activeCount);
+
+        const result = await youtubedl(url, mergedFlags);
+        span.setStatus({ code: SpanStatusCode.OK });
+        return result;
+      } catch (error) {
+        span.recordException(error);
+        span.setStatus({
+          code: SpanStatusCode.ERROR,
+          message: error.message || 'yt-dlp execution failed',
+        });
+        throw error;
+      } finally {
+        span.end();
+      }
+    });
+  } finally {
+    releaseSlot();
+  }
 }
+

@@ -77,18 +77,72 @@ async function handleDuplicateFile(dirHandle, filename) {
 }
 
 /**
+ * 브라우저 기본 다운로드(<a> 태그)를 통해 URL을 직접 다운로드합니다.
+ * @param {string} downloadUrl
+ * @param {string} filename
+ */
+export function triggerNativeBrowserDownload(downloadUrl, filename) {
+  const a = document.createElement('a');
+  a.href = downloadUrl;
+  a.download = filename || 'download';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  return { method: 'browser-direct', filename };
+}
+
+/**
+ * fetch 호출 전(사용자 클릭 제스처가 활성화된 시점)에 폴더 권한을 검증하고 중복 파일명을 확정합니다.
+ * - 5초 이상 소요되는 yt-dlp 변환 대기 중 브라우저 User Activation 만료로 인한 권한 오류 및
+ *   스트림 대기 타임아웃(Failed to fetch)을 예방합니다.
+ *
+ * @param {string} filename
+ * @param {FileSystemDirectoryHandle|null} dirHandle
+ * @returns {Promise<{ validDirHandle: FileSystemDirectoryHandle|null, finalName: string }>}
+ */
+export async function prepareDirectoryTarget(filename, dirHandle) {
+  if (!dirHandle || typeof dirHandle.getFileHandle !== 'function') {
+    return { validDirHandle: null, finalName: filename };
+  }
+
+  try {
+    if (typeof dirHandle.queryPermission === 'function') {
+      let perm = await dirHandle.queryPermission({ mode: 'readwrite' });
+      if (perm !== 'granted' && typeof dirHandle.requestPermission === 'function') {
+        perm = await dirHandle.requestPermission({ mode: 'readwrite' });
+      }
+      if (perm !== 'granted') {
+        return { validDirHandle: null, finalName: filename };
+      }
+    }
+
+    let finalName = filename;
+    if (await fileExists(dirHandle, filename)) {
+      const result = await handleDuplicateFile(dirHandle, filename);
+      finalName = result.filename;
+    }
+
+    return { validDirHandle: dirHandle, finalName };
+  } catch (err) {
+    console.warn('Directory handle preparation failed, will use browser download fallback:', err);
+    return { validDirHandle: null, finalName: filename };
+  }
+}
+
+/**
  * Blob 데이터를 파일로 저장
  * @param {Blob} blob                      - 저장할 데이터
  * @param {string} filename                - 파일명
  * @param {FileSystemDirectoryHandle|null} dirHandle - 폴더 핸들 (없으면 브라우저 다운로드)
+ * @param {{ preResolvedName?: string }} [options]
  * @returns {Promise<{method: string, filename: string}>}
  */
-export async function saveFile(blob, filename, dirHandle) {
+export async function saveFile(blob, filename, dirHandle, options = {}) {
   // ── File System Access API: 선택된 폴더에 직접 저장 ──
   if (dirHandle && typeof dirHandle.getFileHandle === 'function') {
     try {
-      let finalName = filename;
-      if (await fileExists(dirHandle, filename)) {
+      let finalName = options.preResolvedName || filename;
+      if (!options.preResolvedName && (await fileExists(dirHandle, filename))) {
         const result = await handleDuplicateFile(dirHandle, filename);
         finalName = result.filename;
       }
@@ -111,7 +165,7 @@ export async function saveFile(blob, filename, dirHandle) {
   document.body.appendChild(a);
   a.click();
   a.remove();
-  setTimeout(() => window.URL.revokeObjectURL(url), 1000);
+  setTimeout(() => window.URL.revokeObjectURL(url), 10000);
   return { method: 'browser', filename };
 }
 
@@ -120,14 +174,15 @@ export async function saveFile(blob, filename, dirHandle) {
  * @param {Response} response               - fetch Response 객체
  * @param {string} filename                 - 저장할 파일명
  * @param {FileSystemDirectoryHandle|null} dirHandle - 폴더 핸들
+ * @param {{ preResolvedName?: string, fallbackUrl?: string }} [options]
  * @returns {Promise<{method: string, filename: string}>}
  */
-export async function saveResponseStream(response, filename, dirHandle) {
+export async function saveResponseStream(response, filename, dirHandle, options = {}) {
   // 1. File System Access API 지원 & 폴더 핸들 존재 시: 스트림 직결 파이핑
   if (dirHandle && typeof dirHandle.getFileHandle === 'function' && response.body && typeof response.body.pipeTo === 'function') {
     try {
-      let finalName = filename;
-      if (await fileExists(dirHandle, filename)) {
+      let finalName = options.preResolvedName || filename;
+      if (!options.preResolvedName && (await fileExists(dirHandle, filename))) {
         const result = await handleDuplicateFile(dirHandle, filename);
         finalName = result.filename;
       }
@@ -139,13 +194,33 @@ export async function saveResponseStream(response, filename, dirHandle) {
       await response.body.pipeTo(writable);
       return { method: 'filesystem-stream', filename: finalName };
     } catch (err) {
-      console.error('Direct stream piping failed, falling back to blob download:', err);
+      console.error('Direct stream piping failed, falling back to download:', err);
+      // pipeTo 도중 실패하여 response.body가 이미 소비(locked/disturbed)된 경우
+      if (response.bodyUsed && options.fallbackUrl) {
+        return triggerNativeBrowserDownload(options.fallbackUrl, filename);
+      }
+      // dirHandle 오류로 실패했으므로 아래 폴백에서는 dirHandle을 제외하고 브라우저 기본 다운로드 수행
+      dirHandle = null;
     }
   }
 
   // 2. 폴백: Blob으로 변환 후 다운로드
-  const blob = await response.blob();
-  return saveFile(blob, filename, dirHandle);
+  if (!response.bodyUsed) {
+    try {
+      const blob = await response.blob();
+      return await saveFile(blob, filename, dirHandle, options);
+    } catch (err) {
+      console.error('Blob conversion failed:', err);
+      if (options.fallbackUrl) {
+        return triggerNativeBrowserDownload(options.fallbackUrl, filename);
+      }
+      throw err;
+    }
+  } else if (options.fallbackUrl) {
+    return triggerNativeBrowserDownload(options.fallbackUrl, filename);
+  }
+
+  throw new Error('Response stream already consumed');
 }
 
 /**

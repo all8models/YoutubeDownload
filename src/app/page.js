@@ -99,6 +99,37 @@ function formatChannelUrl(inputUrl) {
 }
 
 /**
+ * 테마를 DOM 루트(html) 클래스에 반영하는 순수 헬퍼 함수
+ */
+function applyTheme(targetTheme) {
+  if (typeof document === 'undefined') return;
+  const root = document.documentElement;
+  root.classList.remove('dark-theme', 'light-theme');
+
+  if (targetTheme === 'system') {
+    const isSystemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    root.classList.add(isSystemDark ? 'dark-theme' : 'light-theme');
+  } else if (targetTheme === 'dark') {
+    root.classList.add('dark-theme');
+  } else {
+    root.classList.add('light-theme');
+  }
+}
+
+/**
+ * 단일 쇼츠 영상 URL(/shorts/VIDEO_ID)인지 확인
+ */
+function isSingleShortUrl(url) {
+  try {
+    const parsed = new URL(url);
+    const pathParts = parsed.pathname.split('/').filter(Boolean);
+    return pathParts.length >= 2 && pathParts[0] === 'shorts';
+  } catch {
+    return false;
+  }
+}
+
+/**
  * 메인 어플리케이션(Home) 페이지 컴포넌트
  * - YouTube URL 입력에 따라 단일 영상, 플레이리스트, 채널 영상, 쇼츠를 지능적으로 분석
  * - 상태 관리를 단순화하여 하나의 통합된 listData 상태만 사용
@@ -107,23 +138,25 @@ function formatChannelUrl(inputUrl) {
 export default function Home() {
   // ─── 기본 입력 상태 (State) ──────────────────────────────────
   const [url, setUrl] = useState('');                   // 사용자가 입력한 YouTube URL
-  const [theme, setTheme] = useState('system');         // 테마 모드 ('light' | 'dark' | 'system')
+  const [theme, setTheme] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('theme') || 'system';
+    }
+    return 'system';
+  });
 
   // ─── API 통신 및 목록 데이터 상태 (State) ──────────────────────
   const [loadingInfo, setLoadingInfo] = useState(false); // 정보 조회 로딩 여부
   const [error, setError] = useState('');                // 조회 실패 시 에러 메시지
   // 기존의 playlistData, shortsData, channelData를 통합한 단일 상태 변수
-  // 구조: { title, count, videos, type }
+  // 구조: { key, title, count, videos, type }
   const [listData, setListData] = useState(null);
   
   const [downloadDirHandle, setDownloadDirHandle] = useState(null); // 자동 저장할 폴더의 권한 핸들
 
   // ─── 테마 제어 및 초기화 로직 ──────────────────────────────────
   useEffect(() => {
-    // 로컬 스토리지에서 테마 불러오기
-    const savedTheme = localStorage.getItem('theme') || 'system';
-    setTheme(savedTheme);
-    applyTheme(savedTheme);
+    applyTheme(theme);
 
     // OS 시스템 설정 변경 감지 리스너
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
@@ -136,21 +169,7 @@ export default function Home() {
 
     mediaQuery.addEventListener('change', handleSystemThemeChange);
     return () => mediaQuery.removeEventListener('change', handleSystemThemeChange);
-  }, []);
-
-  const applyTheme = (targetTheme) => {
-    const root = document.documentElement;
-    root.classList.remove('dark-theme', 'light-theme');
-    
-    if (targetTheme === 'system') {
-      const isSystemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-      root.classList.add(isSystemDark ? 'dark-theme' : 'light-theme');
-    } else if (targetTheme === 'dark') {
-      root.classList.add('dark-theme');
-    } else {
-      root.classList.add('light-theme');
-    }
-  };
+  }, [theme]);
 
   const handleThemeChange = (newTheme) => {
     setTheme(newTheme);
@@ -187,13 +206,23 @@ export default function Home() {
     setListData(null); // 기존 결과 리셋
 
     try {
+      const fetchApi = async (apiUrl) => {
+        try {
+          return await fetch(apiUrl, { cache: 'no-store' });
+        } catch {
+          await new Promise((r) => setTimeout(r, 300));
+          return await fetch(apiUrl, { cache: 'no-store' });
+        }
+      };
+
       // 1. 쇼트 페이지 분석
       if (isShortsUrl(targetUrl)) {
-        const res = await fetch(`/api/shorts?url=${encodeURIComponent(targetUrl)}`);
+        const res = await fetchApi(`/api/shorts?url=${encodeURIComponent(targetUrl)}`);
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Failed to fetch shorts');
         
         setListData({
+          key: targetUrl,
           title: data.channel_title,
           count: data.video_count,
           videos: data.videos,
@@ -204,11 +233,12 @@ export default function Home() {
 
       // 2. 채널 비디오 목록 분석
       if (isChannelVideosUrl(targetUrl)) {
-        const res = await fetch(`/api/channel-videos?url=${encodeURIComponent(targetUrl)}`);
+        const res = await fetchApi(`/api/channel-videos?url=${encodeURIComponent(targetUrl)}`);
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Failed to fetch channel videos');
         
         setListData({
+          key: targetUrl,
           title: data.channel_title,
           count: data.video_count,
           videos: data.videos,
@@ -219,11 +249,12 @@ export default function Home() {
 
       // 3. 플레이리스트 분석
       if (isPlaylistUrl(targetUrl)) {
-        const res = await fetch(`/api/playlist?url=${encodeURIComponent(targetUrl)}`);
+        const res = await fetchApi(`/api/playlist?url=${encodeURIComponent(targetUrl)}`);
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Failed to fetch playlist info');
         
         setListData({
+          key: targetUrl,
           title: data.playlist_title,
           count: data.video_count,
           videos: data.videos,
@@ -233,13 +264,16 @@ export default function Home() {
       }
 
       // 4. 일반 단일 영상 분석 (Fallback)
-      const res = await fetch(`/api/info?url=${encodeURIComponent(targetUrl)}`);
+      const res = await fetchApi(`/api/info?url=${encodeURIComponent(targetUrl)}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to fetch video info');
 
+      const singleType = isSingleShortUrl(targetUrl) ? 'short' : 'video';
+
       // 단일 영상도 목록 형태로 구조화하여 VideoListView에 던져줍니다.
       setListData({
-        title: "단일 영상 분석 결과 (Single Video)",
+        key: targetUrl,
+        title: singleType === 'short' ? '단일 쇼츠 분석 결과 (Single Short)' : '단일 영상 분석 결과 (Single Video)',
         count: 1,
         videos: [
           {
@@ -251,7 +285,7 @@ export default function Home() {
             accessible: true,
           },
         ],
-        type: 'video',
+        type: singleType,
       });
 
     } catch (err) {
@@ -320,6 +354,7 @@ export default function Home() {
         {/* 데이터 페칭 완료 시 통합된 VideoListView 렌더링 */}
         {listData && (
           <VideoListView 
+            key={listData.key}
             title={listData.title}
             count={listData.count}
             videos={listData.videos}

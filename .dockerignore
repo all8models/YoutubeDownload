@@ -3,6 +3,15 @@ Dockerfile
 node_modules
 npm-debug.log
 README.md
+ARCHITECTURE.md
+ARCHITECTURE_TEMPLATE.md
 .next
 .git
+.DS_Store
 doc
+tmp
+*.mp3
+*.mp4
+shorts_test.json
+metadata_ko.json
+

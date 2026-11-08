@@ -1,6 +1,12 @@
 import { NextResponse } from 'next/server';
 import ytdl from '../../../lib/ytdl';
-import { fetchMembersOnlyIds, mapVideoEntries } from '../../../lib/youtubeHelpers';
+import {
+  fetchMembersOnlyIds,
+  mapVideoEntries,
+  validateYouTubeUrl,
+} from '../../../lib/youtubeHelpers';
+
+const MAX_PLAYLIST_ITEMS = 200;
 
 /**
  * GET /api/playlist?url=PLAYLIST_URL
@@ -22,22 +28,23 @@ import { fetchMembersOnlyIds, mapVideoEntries } from '../../../lib/youtubeHelper
  * }
  */
 export async function GET(request) {
-  // 1. 요청 URL에서 'url' 쿼리 파라미터 파싱
+  // 1. 요청 URL에서 'url' 쿼리 파라미터 파싱 및 보안 검증
   const { searchParams } = new URL(request.url);
-  const url = searchParams.get('url');
+  const rawUrl = searchParams.get('url');
 
-  if (!url) {
-    return NextResponse.json({ error: 'URL is required' }, { status: 400 });
+  const validation = validateYouTubeUrl(rawUrl);
+  if (!validation.valid) {
+    return NextResponse.json({ error: validation.error }, { status: 400 });
   }
+  const url = validation.url;
 
   try {
-    // 2. yt-dlp를 통해 플레이리스트 정보 추출
+    // 2. yt-dlp를 통해 플레이리스트 정보 추출 (초대형 목록으로 인한 DoS 방지를 위해 상한 적용)
     const info = await ytdl(url, {
       dumpSingleJson: true,      // 결과를 파싱하기 쉬운 JSON 형태로 반환
       flatPlaylist: true,        // 재생목록 항목만 빠르게 추출 (상세 정보 생략하여 속도 대폭 향상)
+      playlistEnd: MAX_PLAYLIST_ITEMS,
       noWarnings: true,
-      callHome: false,
-      noCheckCertificate: true,
       extractorArgs: 'youtube:lang=is', // 아이슬란드어(is) 설정으로 원본 언어(영어/한국어 등) 제목을 우선 추출
     });
 
@@ -46,7 +53,11 @@ export async function GET(request) {
     const membersOnlyIds = await fetchMembersOnlyIds(info.channel_id);
 
     // 4. yt-dlp 결과(entries)를 프론트엔드에서 렌더링하기 좋은 형태로 정제
-    const videos = mapVideoEntries(info.entries, membersOnlyIds);
+    const videos = Array.isArray(info.entries) && info.entries.length > 0
+      ? mapVideoEntries(info.entries, membersOnlyIds)
+      : info.id
+        ? mapVideoEntries([info], membersOnlyIds)
+        : [];
 
     // 5. 성공적인 응답 반환
     return NextResponse.json({
@@ -63,3 +74,4 @@ export async function GET(request) {
     );
   }
 }
+

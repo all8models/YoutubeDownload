@@ -1,20 +1,114 @@
 import ytdl from './ytdl';
 
-// 멤버십 ID 캐시 (TTL: 10분)
+// 허용된 YouTube 공식 호스트네임 화이트리스트 (SSRF 및 임의 도메인 요청 차단)
+const ALLOWED_YOUTUBE_HOSTS = new Set([
+  'youtube.com',
+  'www.youtube.com',
+  'm.youtube.com',
+  'music.youtube.com',
+  'youtu.be',
+  'www.youtu.be',
+]);
+
+// 멤버십 ID 캐시 (TTL: 10분, 최대 엔트리: 200개)
 const membersCache = new Map();
 const MEMBERS_CACHE_TTL = 10 * 60 * 1000;
+const MAX_MEMBERS_CACHE_SIZE = 200;
+
+/**
+ * 입력된 URL이 안전한 YouTube 도메인 URL인지 검증하고 정규화합니다.
+ * - SSRF(내부망/메타데이터 접근), 로컬 파일 스킴(file://), CLI 옵션 인젝션(-로 시작)을 원천 차단합니다.
+ *
+ * @param {string} rawUrl - 클라이언트가 전달한 원본 URL 문자열
+ * @returns {{ valid: boolean, url?: string, error?: string }}
+ */
+export function validateYouTubeUrl(rawUrl) {
+  if (!rawUrl || typeof rawUrl !== 'string') {
+    return { valid: false, error: 'URL is required' };
+  }
+
+  const trimmed = rawUrl.trim();
+  if (!trimmed || trimmed.length > 2048) {
+    return { valid: false, error: 'Invalid URL length' };
+  }
+
+  // 제어문자 및 CLI 플래그 인젝션 방지
+  if (trimmed.startsWith('-') || /[\r\n\0]/.test(trimmed)) {
+    return { valid: false, error: 'Invalid characters in URL' };
+  }
+
+  let candidate = trimmed;
+  if (!/^https?:\/\//i.test(candidate)) {
+    candidate = `https://${candidate}`;
+  }
+
+  try {
+    const parsed = new URL(candidate);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return { valid: false, error: 'Only HTTP/HTTPS URLs are supported' };
+    }
+
+    const hostname = parsed.hostname.toLowerCase();
+    if (!ALLOWED_YOUTUBE_HOSTS.has(hostname)) {
+      return {
+        valid: false,
+        error: 'Only valid YouTube URLs (youtube.com, youtu.be) are allowed',
+      };
+    }
+
+    // URL 내 자격 증명(username/password) 포함 차단
+    if (parsed.username || parsed.password) {
+      return { valid: false, error: 'Credentials in URL are not allowed' };
+    }
+
+    return { valid: true, url: parsed.toString() };
+  } catch {
+    return { valid: false, error: 'Malformed YouTube URL' };
+  }
+}
+
+/**
+ * 다운로드 포맷 ID(format_id)의 유효성을 검증합니다.
+ * - Path Traversal (../) 및 비정상 포맷 문자열 주입을 차단합니다.
+ *
+ * @param {string} [rawFormatId]
+ * @param {string} [defaultFormat='bestaudio']
+ * @returns {{ valid: boolean, formatId?: string, error?: string }}
+ */
+export function validateFormatId(rawFormatId, defaultFormat = 'bestaudio') {
+  if (rawFormatId === undefined || rawFormatId === null || rawFormatId === '') {
+    return { valid: true, formatId: defaultFormat };
+  }
+
+  if (typeof rawFormatId !== 'string') {
+    return { valid: false, error: 'Invalid format_id type' };
+  }
+
+  const trimmed = rawFormatId.trim();
+  if (
+    trimmed.startsWith('-') ||
+    trimmed.includes('..') ||
+    trimmed.includes('/') ||
+    trimmed.includes('\\') ||
+    !/^[a-zA-Z0-9+_-]{1,64}$/.test(trimmed)
+  ) {
+    return { valid: false, error: 'Invalid format_id parameter' };
+  }
+
+  return { valid: true, formatId: trimmed };
+}
 
 /**
  * 유튜브 멤버십 전용(Members-only) 영상들의 ID 목록을 수집하는 함수입니다.
  * 채널 ID가 'UC'로 시작할 경우, 'UUMO' 접두사로 변환하면 멤버십 전용 플레이리스트에 접근할 수 있습니다.
  * 이를 활용하여 멤버십 전용 영상인지 아닌지를 판별하기 위한 ID Set을 반환합니다.
- * (10분 인메모리 캐시를 적용하여 중복 yt-dlp 호출 방지)
+ * (10분 인메모리 캐시 및 최대 크기 제한을 적용하여 중복 yt-dlp 호출과 메모리 누수 방지)
  * 
  * @param {string} channelId - 유튜브 채널의 고유 ID (예: 'UC1234567890abcdef')
  * @returns {Promise<Set<string>>} - 멤버십 전용 영상들의 ID가 담긴 Set 객체
  */
 export async function fetchMembersOnlyIds(channelId) {
-  if (!channelId || !channelId.startsWith('UC')) {
+  if (!channelId || typeof channelId !== 'string' || !/^UC[a-zA-Z0-9_-]{10,40}$/.test(channelId)) {
     return new Set();
   }
 
@@ -34,9 +128,6 @@ export async function fetchMembersOnlyIds(channelId) {
       flatPlaylist: true,
       playlistEnd: 100, // 최대 100개까지만 검사하여 API 요청 시간을 절약합니다.
       noWarnings: true,
-      callHome: false,
-      noCheckCertificate: true,
-      youtubeSkipDashManifest: true,
     });
     
     // 가져온 영상 목록에서 ID만 추출하여 Set에 저장합니다.
@@ -51,6 +142,19 @@ export async function fetchMembersOnlyIds(channelId) {
     // 해당 채널이 멤버십을 운영하지 않거나 권한이 없는 경우 오류가 발생할 수 있습니다.
     // 이 경우 프로그램이 중단되지 않도록 조용히 넘깁니다.
     console.log('No membership playlist found or error:', err.message);
+  }
+
+  // 캐시 크기 초과 시 만료된 항목 또는 가장 오래된 항목 정리 (Bounded Cache)
+  if (membersCache.size >= MAX_MEMBERS_CACHE_SIZE) {
+    for (const [key, val] of membersCache.entries()) {
+      if (now - val.timestamp >= MEMBERS_CACHE_TTL) {
+        membersCache.delete(key);
+      }
+    }
+    if (membersCache.size >= MAX_MEMBERS_CACHE_SIZE) {
+      const oldestKey = membersCache.keys().next().value;
+      if (oldestKey) membersCache.delete(oldestKey);
+    }
   }
 
   // 캐시 저장

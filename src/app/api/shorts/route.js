@@ -1,6 +1,12 @@
 import { NextResponse } from 'next/server';
 import ytdl from '../../../lib/ytdl';
-import { fetchMembersOnlyIds, mapVideoEntries } from '../../../lib/youtubeHelpers';
+import {
+  fetchMembersOnlyIds,
+  mapVideoEntries,
+  validateYouTubeUrl,
+} from '../../../lib/youtubeHelpers';
+
+const MAX_SHORTS_ITEMS = 200;
 
 /**
  * GET /api/shorts?url=SHORTS_PAGE_URL
@@ -23,22 +29,23 @@ import { fetchMembersOnlyIds, mapVideoEntries } from '../../../lib/youtubeHelper
  * }
  */
 export async function GET(request) {
-  // 1. 요청 URL에서 'url' 쿼리 파라미터 파싱
+  // 1. 요청 URL에서 'url' 쿼리 파라미터 파싱 및 보안 검증
   const { searchParams } = new URL(request.url);
-  const url = searchParams.get('url');
+  const rawUrl = searchParams.get('url');
 
-  if (!url) {
-    return NextResponse.json({ error: 'URL is required' }, { status: 400 });
+  const validation = validateYouTubeUrl(rawUrl);
+  if (!validation.valid) {
+    return NextResponse.json({ error: validation.error }, { status: 400 });
   }
+  const url = validation.url;
 
   try {
     // 2. yt-dlp를 통해 Shorts 플레이리스트 정보 추출
     const info = await ytdl(url, {
       dumpSingleJson: true,      // 결과를 파싱하기 쉬운 JSON 형태로 반환
       flatPlaylist: true,        // 재생목록에 있는 항목의 메타데이터만 빠르게 추출
+      playlistEnd: MAX_SHORTS_ITEMS,
       noWarnings: true,          // 불필요한 경고 메시지 억제
-      callHome: false,           // 분석 데이터 전송 방지
-      noCheckCertificate: true,  // SSL 인증서 오류 무시 (일부 환경 호환성)
       // 안드로이드 클라이언트를 사용하여 쇼츠 데이터를 안정적으로 가져오며,
       // 아이슬란드어(is) 설정을 통해 원본 언어(영어/한국어) 제목이 우선 반환되도록 유도합니다.
       extractorArgs: 'youtube:player_client=android;lang=is',
@@ -74,3 +81,4 @@ export async function GET(request) {
     );
   }
 }
+
