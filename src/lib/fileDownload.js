@@ -1,18 +1,60 @@
 /**
- * 파일 다운로드 유틸리티
+ * 파일 다운로드 및 클라이언트 동시성 제어 유틸리티
  *
- * File System Access API(showDirectoryPicker)를 지원하는 브라우저(Chrome, Edge 등)에서는
- * 사용자가 최초 1회 폴더를 선택한 후 모든 파일이 자동 저장됩니다.
- * 지원하지 않는 브라우저에서는 기존 방식(브라우저 다운로드 다이얼로그)으로 동작합니다.
+ * - File System Access API 지원 브라우저: RAM 버퍼링 없는 디스크 직결 스트리밍 저장
+ * - 실시간 전송 진행률(%, MB) 스로틀링 콜백(150ms 간격) 지원
+ * - 클라이언트 다운로드 동시성 제한 큐(최대 3개 병렬)로 브라우저 도메인당 소켓 고갈 방지
  */
+
+const MAX_CLIENT_CONCURRENT_DOWNLOADS = 3;
+let activeClientDownloads = 0;
+const clientDownloadQueue = [];
+
+/**
+ * 클라이언트 측 동시 다운로드 수를 제한하여 브라우저 HTTP 커넥션 풀 포화를 방지합니다.
+ *
+ * @template T
+ * @param {() => Promise<T>} taskFn
+ * @param {() => void} [onStart] - 대기열에서 빠져나와 실제 네트워크 요청이 시작될 때 호출
+ * @returns {{ queued: boolean, promise: Promise<T> }}
+ */
+export function enqueueClientDownload(taskFn, onStart) {
+  const willQueue = activeClientDownloads >= MAX_CLIENT_CONCURRENT_DOWNLOADS;
+
+  const promise = new Promise((resolve, reject) => {
+    const run = async () => {
+      activeClientDownloads += 1;
+      try {
+        onStart?.();
+        const result = await taskFn();
+        resolve(result);
+      } catch (err) {
+        reject(err);
+      } finally {
+        activeClientDownloads = Math.max(0, activeClientDownloads - 1);
+        if (clientDownloadQueue.length > 0) {
+          const nextTask = clientDownloadQueue.shift();
+          nextTask();
+        }
+      }
+    };
+
+    if (!willQueue) {
+      run();
+    } else {
+      clientDownloadQueue.push(run);
+    }
+  });
+
+  return { queued: willQueue, promise };
+}
 
 /**
  * 다운로드 폴더 선택
- * @returns {Promise<FileSystemDirectoryHandle|null>} 선택된 폴더 핸들 (실패 시 null)
+ * @returns {Promise<FileSystemDirectoryHandle|null>}
  */
 export async function chooseDownloadDirectory() {
   try {
-    // File System Access API 지원 여부 확인
     if (typeof window === 'undefined' || !('showDirectoryPicker' in window)) {
       return null;
     }
@@ -22,19 +64,12 @@ export async function chooseDownloadDirectory() {
     });
     return handle;
   } catch (err) {
-    // 사용자가 취소한 경우 (DOMException: The user aborted a request)
     if (err.name === 'AbortError') return null;
     console.error('Failed to pick download directory:', err);
     return null;
   }
 }
 
-/**
- * 파일명에서 확장자와 기본 이름을 분리하여 인덱스를 증가시킨 새 파일명 생성
- * 예: "video.mp4" → "video (1).mp4" → "video (2).mp4"
- * @param {string} filename - 원본 파일명
- * @returns {string} 인덱스가 증가된 파일명
- */
 function incrementFilename(filename) {
   const dotIdx = filename.lastIndexOf('.');
   const name = dotIdx > 0 ? filename.slice(0, dotIdx) : filename;
@@ -47,9 +82,6 @@ function incrementFilename(filename) {
   return `${name} (1)${ext}`;
 }
 
-/**
- * 파일이 이미 존재하는지 확인
- */
 async function fileExists(dirHandle, filename) {
   try {
     await dirHandle.getFileHandle(filename);
@@ -59,9 +91,6 @@ async function fileExists(dirHandle, filename) {
   }
 }
 
-/**
- * 중복 파일명 처리: 사용자에게 덮어쓰기 또는 새 이름 저장 선택
- */
 async function handleDuplicateFile(dirHandle, filename) {
   const overwrite = window.confirm(
     `"${filename}" already exists.\n\nOK = Overwrite\nCancel = Save with a new name`
@@ -76,11 +105,6 @@ async function handleDuplicateFile(dirHandle, filename) {
   return { action: 'rename', filename: newName };
 }
 
-/**
- * 브라우저 기본 다운로드(<a> 태그)를 통해 URL을 직접 다운로드합니다.
- * @param {string} downloadUrl
- * @param {string} filename
- */
 export function triggerNativeBrowserDownload(downloadUrl, filename) {
   const a = document.createElement('a');
   a.href = downloadUrl;
@@ -93,12 +117,6 @@ export function triggerNativeBrowserDownload(downloadUrl, filename) {
 
 /**
  * fetch 호출 전(사용자 클릭 제스처가 활성화된 시점)에 폴더 권한을 검증하고 중복 파일명을 확정합니다.
- * - 5초 이상 소요되는 yt-dlp 변환 대기 중 브라우저 User Activation 만료로 인한 권한 오류 및
- *   스트림 대기 타임아웃(Failed to fetch)을 예방합니다.
- *
- * @param {string} filename
- * @param {FileSystemDirectoryHandle|null} dirHandle
- * @returns {Promise<{ validDirHandle: FileSystemDirectoryHandle|null, finalName: string }>}
  */
 export async function prepareDirectoryTarget(filename, dirHandle) {
   if (!dirHandle || typeof dirHandle.getFileHandle !== 'function') {
@@ -130,15 +148,43 @@ export async function prepareDirectoryTarget(filename, dirHandle) {
 }
 
 /**
- * Blob 데이터를 파일로 저장
- * @param {Blob} blob                      - 저장할 데이터
- * @param {string} filename                - 파일명
- * @param {FileSystemDirectoryHandle|null} dirHandle - 폴더 핸들 (없으면 브라우저 다운로드)
- * @param {{ preResolvedName?: string }} [options]
- * @returns {Promise<{method: string, filename: string}>}
+ * ReadableStream에 150ms 간격 스로틀링 진행률 추적기를 부착합니다.
  */
+function wrapStreamWithProgress(bodyStream, totalBytes, onProgress) {
+  if (!bodyStream || !onProgress || typeof TransformStream === 'undefined') {
+    return bodyStream;
+  }
+
+  let receivedBytes = 0;
+  let lastEmitTime = 0;
+
+  return bodyStream.pipeThrough(
+    new TransformStream({
+      transform(chunk, controller) {
+        receivedBytes += chunk.byteLength;
+        const now = performance.now();
+        if (now - lastEmitTime >= 150) {
+          lastEmitTime = now;
+          if (totalBytes > 0) {
+            const pct = Math.min(99, Math.round((receivedBytes / totalBytes) * 100));
+            onProgress(`${pct}%`);
+          } else {
+            const mb = (receivedBytes / (1024 * 1024)).toFixed(1);
+            onProgress(`${mb}MB`);
+          }
+        }
+        controller.enqueue(chunk);
+      },
+      flush() {
+        if (totalBytes > 0) {
+          onProgress('100%');
+        }
+      },
+    })
+  );
+}
+
 export async function saveFile(blob, filename, dirHandle, options = {}) {
-  // ── File System Access API: 선택된 폴더에 직접 저장 ──
   if (dirHandle && typeof dirHandle.getFileHandle === 'function') {
     try {
       let finalName = options.preResolvedName || filename;
@@ -157,7 +203,6 @@ export async function saveFile(blob, filename, dirHandle, options = {}) {
     }
   }
 
-  // ── 폴백: 브라우저 기본 다운로드 ──
   const url = window.URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -170,16 +215,23 @@ export async function saveFile(blob, filename, dirHandle, options = {}) {
 }
 
 /**
- * Fetch Response의 ReadableStream을 RAM 버퍼링 없이 디스크로 즉시 스트리밍 저장 (Zero-Buffer Direct Streaming)
- * @param {Response} response               - fetch Response 객체
- * @param {string} filename                 - 저장할 파일명
- * @param {FileSystemDirectoryHandle|null} dirHandle - 폴더 핸들
- * @param {{ preResolvedName?: string, fallbackUrl?: string }} [options]
- * @returns {Promise<{method: string, filename: string}>}
+ * Fetch Response의 ReadableStream을 RAM 버퍼링 없이 디스크로 즉시 스트리밍 저장합니다.
+ *
+ * @param {Response} response
+ * @param {string} filename
+ * @param {FileSystemDirectoryHandle|null} dirHandle
+ * @param {{ preResolvedName?: string, fallbackUrl?: string, onProgress?: (text: string) => void }} [options]
  */
 export async function saveResponseStream(response, filename, dirHandle, options = {}) {
-  // 1. File System Access API 지원 & 폴더 핸들 존재 시: 스트림 직결 파이핑
-  if (dirHandle && typeof dirHandle.getFileHandle === 'function' && response.body && typeof response.body.pipeTo === 'function') {
+  const totalBytes = parseInt(response.headers.get('Content-Length') || '0', 10) || 0;
+
+  // 1. File System Access API 직결 파이핑 (먼저 파일 핸들을 확보하여 실패 시에도 response.body 보존)
+  if (
+    dirHandle &&
+    typeof dirHandle.getFileHandle === 'function' &&
+    response.body &&
+    typeof response.body.pipeTo === 'function'
+  ) {
     try {
       let finalName = options.preResolvedName || filename;
       if (!options.preResolvedName && (await fileExists(dirHandle, filename))) {
@@ -189,25 +241,29 @@ export async function saveResponseStream(response, filename, dirHandle, options 
 
       const fileHandle = await dirHandle.getFileHandle(finalName, { create: true });
       const writable = await fileHandle.createWritable();
-      
-      // 브라우저 메모리에 담아두지 않고 디스크로 바로 파이핑
-      await response.body.pipeTo(writable);
+      const trackedBody = wrapStreamWithProgress(response.body, totalBytes, options.onProgress);
+
+      await trackedBody.pipeTo(writable);
       return { method: 'filesystem-stream', filename: finalName };
     } catch (err) {
       console.error('Direct stream piping failed, falling back to download:', err);
-      // pipeTo 도중 실패하여 response.body가 이미 소비(locked/disturbed)된 경우
       if (response.bodyUsed && options.fallbackUrl) {
         return triggerNativeBrowserDownload(options.fallbackUrl, filename);
       }
-      // dirHandle 오류로 실패했으므로 아래 폴백에서는 dirHandle을 제외하고 브라우저 기본 다운로드 수행
       dirHandle = null;
     }
   }
 
-  // 2. 폴백: Blob으로 변환 후 다운로드
+  // 2. 폴백: 진행률을 추적하며 Blob으로 변환 후 브라우저 기본 다운로드 수행
   if (!response.bodyUsed) {
     try {
-      const blob = await response.blob();
+      let blob;
+      if (response.body && options.onProgress) {
+        const trackedBody = wrapStreamWithProgress(response.body, totalBytes, options.onProgress);
+        blob = await new Response(trackedBody, { headers: response.headers }).blob();
+      } else {
+        blob = await response.blob();
+      }
       return await saveFile(blob, filename, dirHandle, options);
     } catch (err) {
       console.error('Blob conversion failed:', err);
@@ -223,10 +279,6 @@ export async function saveResponseStream(response, filename, dirHandle, options 
   throw new Error('Response stream already consumed');
 }
 
-/**
- * File System Access API 지원 여부 확인
- * @returns {boolean}
- */
 export function isFileSystemAccessSupported() {
   return typeof window !== 'undefined' && 'showDirectoryPicker' in window;
 }

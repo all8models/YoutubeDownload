@@ -208,7 +208,7 @@ export default function Home() {
     try {
       const fetchApi = async (apiUrl) => {
         try {
-          return await fetch(apiUrl, { cache: 'no-store' });
+          return await fetch(apiUrl);
         } catch {
           await new Promise((r) => setTimeout(r, 300));
           return await fetch(apiUrl, { cache: 'no-store' });
@@ -281,6 +281,7 @@ export default function Home() {
             title: data.title,
             url: data.url || targetUrl,
             thumbnail: data.thumbnail,
+            thumbnailFallback: data.thumbnailFallback,
             duration: data.duration,
             accessible: true,
           },

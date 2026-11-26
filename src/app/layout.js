@@ -14,12 +14,13 @@ const geistMono = Geist_Mono({
 
 export const metadata = {
   title: "YouTube to MP3 / MP4 Downloader",
-  description: "High-speed YouTube video, playlist, channel, and Shorts MP3/MP4 downloader with Zero-Buffer streaming",
+  description:
+    "High-speed YouTube video, playlist, channel, and Shorts MP3/MP4 downloader with Zero-Disk & Zero-Buffer streaming",
 };
 
 /**
  * 루트 레이아웃 컴포넌트
- * 모든 페이지에 공통으로 적용되는 HTML 구조와 폰트를 설정합니다.
+ * - YouTube 썸네일 CDN(i.ytimg.com) 사전 연결(preconnect)로 이미지 TLS 핸드셰이크 지연 제거
  */
 export default function RootLayout({ children }) {
   return (
@@ -29,6 +30,8 @@ export default function RootLayout({ children }) {
       className={`${geistSans.variable} ${geistMono.variable}`}
     >
       <head>
+        <link rel="preconnect" href="https://i.ytimg.com" crossOrigin="anonymous" />
+        <link rel="dns-prefetch" href="https://i.ytimg.com" />
         <script
           dangerouslySetInnerHTML={{
             __html: `

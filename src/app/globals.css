@@ -1,14 +1,14 @@
 /* ─── CSS 변수 (색상, 유리 효과, 그림자) ─────────────────────── */
 :root {
-  /* 기본적으로 다크 테마 변수를 디폴트로 적용 */
-  --bg-color: #0f172a;           /* 딥 블루 배경 */
-  --text-color: #f8fafc;         /* 밝은 텍스트 */
-  --accent-color: #3b82f6;       /* 강조 색상 (파랑) */
-  --accent-hover: #2563eb;       /* 호버 시 더 진한 파랑 */
-  --glass-bg: rgba(30, 41, 59, 0.7);    /* 유리 효과 배경 */
-  --glass-border: rgba(255, 255, 255, 0.1); /* 유리 효과 테두리 */
-  --glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37); /* 그림자 */
-  --error-color: #ef4444;       /* 에러 메시지 빨강 */
+  --bg-color: #0f172a;
+  --text-color: #f8fafc;
+  --accent-color: #3b82f6;
+  --accent-hover: #2563eb;
+  --glass-bg: rgba(30, 41, 59, 0.72);
+  --card-bg: rgba(15, 23, 42, 0.55);
+  --glass-border: rgba(255, 255, 255, 0.1);
+  --glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+  --error-color: #ef4444;
   --input-bg: rgba(15, 23, 42, 0.6);
   --input-text-color: #f8fafc;
   --text-secondary: #94a3b8;
@@ -25,7 +25,8 @@
   --text-color: #0f172a;
   --accent-color: #2563eb;
   --accent-hover: #1d4ed8;
-  --glass-bg: rgba(255, 255, 255, 0.65);
+  --glass-bg: rgba(255, 255, 255, 0.72);
+  --card-bg: rgba(255, 255, 255, 0.78);
   --glass-border: rgba(15, 23, 42, 0.08);
   --glass-shadow: 0 8px 32px 0 rgba(15, 23, 42, 0.06);
   --error-color: #dc2626;
@@ -45,7 +46,8 @@
   --text-color: #f8fafc;
   --accent-color: #3b82f6;
   --accent-hover: #2563eb;
-  --glass-bg: rgba(30, 41, 59, 0.7);
+  --glass-bg: rgba(30, 41, 59, 0.72);
+  --card-bg: rgba(15, 23, 42, 0.55);
   --glass-border: rgba(255, 255, 255, 0.1);
   --glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
   --error-color: #ef4444;
@@ -67,16 +69,11 @@
   margin: 0;
 }
 
-/* ─── 바디: 그라데이션 배경 + 중앙 정렬 ──────────────────────── */
+/* ─── 바디: 고정 GPU 레이어 배경(스크롤 리페인트 제거) ─────────── */
 body {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+  font-family: var(--font-geist-sans), 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI',
+    Roboto, sans-serif;
   background-color: var(--bg-color);
-  /* 3색 그라데이션 배경 (좌측 상단부터) */
-  background-image: 
-    radial-gradient(at 0% 0%, hsla(253,16%,7%,1) 0, transparent 50%), 
-    radial-gradient(at 50% 0%, hsla(225,39%,30%,1) 0, transparent 50%), 
-    radial-gradient(at 100% 0%, hsla(339,49%,30%,1) 0, transparent 50%);
-  background-attachment: fixed;
   color: var(--text-color);
   min-height: 100vh;
   display: flex;
@@ -86,11 +83,22 @@ body {
   transition: background-color 0.3s ease, color 0.3s ease;
 }
 
-/* 라이트 테마 바디 그라데이션 */
-.light-theme body {
-  background-image: 
-    radial-gradient(at 0% 0%, hsla(215, 60%, 93%, 1) 0, transparent 50%), 
-    radial-gradient(at 50% 0%, hsla(262, 50%, 93%, 1) 0, transparent 50%), 
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image:
+    radial-gradient(at 0% 0%, hsla(253, 16%, 7%, 1) 0, transparent 50%),
+    radial-gradient(at 50% 0%, hsla(225, 39%, 30%, 1) 0, transparent 50%),
+    radial-gradient(at 100% 0%, hsla(339, 49%, 30%, 1) 0, transparent 50%);
+}
+
+.light-theme body::before {
+  background-image:
+    radial-gradient(at 0% 0%, hsla(215, 60%, 93%, 1) 0, transparent 50%),
+    radial-gradient(at 50% 0%, hsla(262, 50%, 93%, 1) 0, transparent 50%),
     radial-gradient(at 100% 0%, hsla(20, 50%, 93%, 1) 0, transparent 50%);
 }
 
@@ -102,22 +110,33 @@ body {
   margin: 0 auto;
 }
 
-/* ─── 유리 효과(Glassmorphism) 패널 ──────────────────────────── */
+.container-wide {
+  max-width: 1100px;
+}
+
+/* ─── 외곽 유리 효과(Glassmorphism) 패널 (단일 레이어 블러) ───── */
 .glass-panel {
   position: relative;
   background: var(--glass-bg);
-  backdrop-filter: blur(12px);         /* 배경 블러 처리 */
+  backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border: 1px solid var(--glass-border);
   border-radius: 16px;
   padding: 2rem;
   box-shadow: var(--glass-shadow);
-  transition: transform 0.3s ease, box-shadow 0.3s ease, background 0.3s ease, border-color 0.3s ease;
+  transition: background 0.3s ease, border-color 0.3s ease;
 }
 
-.glass-panel:hover {
-  transform: translateY(-2px);         /* 호버 시 살짝 떠오름 */
-  box-shadow: 0 12px 40px 0 rgba(0, 0, 0, 0.45);
+/* ─── 개별 비디오 카드 경량 표면 (중첩 backdrop-filter 제거 + 뷰포트 가상화) ─── */
+.video-card-surface {
+  background: var(--card-bg);
+  border: 1px solid var(--glass-border);
+  content-visibility: auto;
+  contain-intrinsic-size: auto 106px;
+}
+
+.shorts-card-surface {
+  contain-intrinsic-size: auto 194px;
 }
 
 /* ─── 제목 (그라데이션 텍스트) ────────────────────────────────── */
@@ -126,7 +145,6 @@ h1 {
   font-weight: 800;
   text-align: center;
   margin-bottom: 2rem;
-  /* 파랑 → 보라 → 분홍 그라데이션 */
   background: linear-gradient(to right, #3b82f6, #8b5cf6, #ec4899);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
@@ -140,20 +158,19 @@ h1 {
   margin-bottom: 2rem;
 }
 
-/* ─── 텍스트 입력창 ──────────────────────────────────────────── */
-input[type="text"] {
+input[type='text'] {
   flex: 1;
   padding: 1rem 1.5rem;
-  border-radius: 9999px;               /* 완전 둥근 모서리 */
+  border-radius: 9999px;
   border: 1px solid var(--glass-border);
   background: var(--input-bg);
   color: var(--input-text-color);
   font-size: 1rem;
   outline: none;
-  transition: all 0.3s ease;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
-input[type="text"]:focus {
+input[type='text']:focus {
   border-color: var(--accent-color);
   box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.3);
 }
@@ -168,7 +185,7 @@ button {
   font-size: 1rem;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.3s ease;
+  transition: background-color 0.2s ease, transform 0.2s ease;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -181,116 +198,61 @@ button:hover {
 }
 
 button:disabled {
-  background-color: #64748b;           /* 비활성화 시 회색 */
+  background-color: #64748b;
   cursor: not-allowed;
   transform: none;
 }
 
-/* 다운로드 완료 버튼 */
+button.queued {
+  background-color: rgba(59, 130, 246, 0.2);
+  border: 1px solid rgba(59, 130, 246, 0.35);
+  color: var(--text-color);
+  opacity: 0.85;
+}
+
 button.completed {
   background-color: var(--completed-bg);
   border: 1px solid var(--completed-border);
   color: var(--completed-color);
   cursor: default;
-  opacity: 0.85;
+  opacity: 0.9;
 }
 
 button.completed:hover {
   transform: none;
-  background-color: rgba(34, 197, 94, 0.2);
+  background-color: var(--completed-bg);
 }
 
-/* ─── 비디오 정보 영역 ───────────────────────────────────────── */
-.video-info {
-  display: flex;
-  flex-direction: column;
-  gap: 1.5rem;
-  margin-top: 2rem;
-  animation: fadeIn 0.5s ease;
-}
-
-.thumbnail-container {
-  width: 100%;
-  border-radius: 12px;
-  overflow: hidden;
-  position: relative;
-  aspect-ratio: 16/9;                  /* 16:9 비율 유지 */
-}
-
-.thumbnail-container img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.video-details h2 {
-  font-size: 1.5rem;
-  margin-bottom: 0.5rem;
-}
-
-.video-details p {
-  color: #94a3b8;                     /* 회색 부가 정보 */
-  margin-bottom: 1.5rem;
-}
-.video-duration {
-  font-size: 0.9rem;
-  color: var(--text-secondary);
-}
-
-/* ─── 포맷 선택 그룹 ──────────────────────────────────────────── */
-.format-group {
-  margin-bottom: 1.25rem;
-}
-
-.format-group label {
-  display: block;
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: var(--text-secondary);
-  margin-bottom: 0.4rem;
-  text-transform: uppercase;          /* 대문자 레이블 */
-  letter-spacing: 0.5px;
-}
-
-.format-select {
-  width: 100%;
-  padding: 1rem;
-  border-radius: 8px;
-  border: 1px solid var(--glass-border);
-  background: var(--input-bg);
-  color: var(--input-text-color);
-  font-size: 1rem;
-  outline: none;
-  cursor: pointer;
-  transition: all 0.3s ease;
-}
-
-.format-select:focus {
-  border-color: var(--accent-color);
-}
-
-/* ─── 애니메이션 ──────────────────────────────────────────────── */
 @keyframes fadeIn {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* ─── 로딩 스피너 ────────────────────────────────────────────── */
 .loader {
-  border: 3px solid rgba(255, 255, 255, 0.1);
-  border-top: 3px solid white;
+  border: 2.5px solid rgba(255, 255, 255, 0.2);
+  border-top: 2.5px solid white;
   border-radius: 50%;
-  width: 20px;
-  height: 20px;
-  animation: spin 1s linear infinite;
+  width: 16px;
+  height: 16px;
+  animation: spin 0.8s linear infinite;
 }
 
 @keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
 }
 
-/* ─── 에러 메시지 ────────────────────────────────────────────── */
 .error-message {
   color: var(--error-color);
   text-align: center;
@@ -313,7 +275,6 @@ button.completed:hover {
   padding: 0.5rem 1.25rem;
   border-radius: 9999px;
   cursor: pointer;
-  transition: all 0.3s ease;
   display: flex;
   align-items: center;
   gap: 0.4rem;
@@ -325,18 +286,12 @@ button.completed:hover {
   transform: translateY(-1px);
 }
 
-/* ─── 플레이리스트 컨테이너 (더 넓은 레이아웃) ────────────────── */
-.container-wide {
-  max-width: 1100px;
-}
-
-/* ─── 플레이리스트 전체 영역 ──────────────────────────────────── */
+/* ─── 통합 비디오 목록 영역 ──────────────────────────────────── */
 .playlist-view {
   margin-top: 1.5rem;
-  animation: fadeIn 0.5s ease;
+  animation: fadeIn 0.35s ease;
 }
 
-/* ─── 플레이리스트 헤더 (제목 + 영상 개수) ────────────────────── */
 .playlist-header {
   display: flex;
   align-items: baseline;
@@ -363,7 +318,6 @@ button.completed:hover {
   border-radius: 9999px;
 }
 
-/* ─── 영상 목록 (스크롤 가능) ─────────────────────────────────── */
 .playlist-videos {
   display: flex;
   flex-direction: column;
@@ -371,7 +325,6 @@ button.completed:hover {
   max-height: 70vh;
   overflow-y: auto;
   padding-right: 0.5rem;
-  /* 스크롤바 스타일 */
   scrollbar-width: thin;
   scrollbar-color: rgba(148, 163, 184, 0.3) transparent;
 }
@@ -389,22 +342,21 @@ button.completed:hover {
   border-radius: 3px;
 }
 
-/* ─── 개별 영상 카드 ──────────────────────────────────────────── */
 .playlist-video-item {
   display: flex;
   gap: 1rem;
-  padding: 0.75rem !important;
-  border-radius: 12px !important;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  padding: 0.75rem;
+  border-radius: 12px;
+  transition: transform 0.15s ease, border-color 0.15s ease;
   align-items: center;
 }
 
 .playlist-video-item:hover {
   transform: translateX(4px);
-  box-shadow: 0 4px 20px rgba(59, 130, 246, 0.15) !important;
+  border-color: rgba(59, 130, 246, 0.35);
 }
 
-/* ─── 썸네일 ──────────────────────────────────────────────────── */
+/* ─── 썸네일 (16:9 일반 영상 & 9:16 쇼츠) ────────────────────── */
 .playlist-thumbnail-wrapper {
   position: relative;
   width: 160px;
@@ -415,11 +367,11 @@ button.completed:hover {
   flex-shrink: 0;
 }
 
-.playlist-thumbnail-wrapper .playlist-thumbnail,
-.playlist-thumbnail-wrapper .channel-thumbnail {
+.playlist-thumbnail {
   width: 100%;
   height: 100%;
-  border-radius: 0;
+  object-fit: cover;
+  background: rgba(15, 23, 42, 0.5);
 }
 
 .shorts-thumbnail-wrapper {
@@ -432,18 +384,10 @@ button.completed:hover {
   flex-shrink: 0;
 }
 
-.shorts-thumbnail-wrapper .shorts-thumbnail {
+.shorts-thumbnail {
   width: 100%;
   height: 100%;
-  border-radius: 0;
-}
-
-.playlist-thumbnail {
-  width: 160px;
-  min-width: 160px;
-  height: 90px;
   object-fit: cover;
-  border-radius: 8px;
   background: rgba(15, 23, 42, 0.5);
 }
 
@@ -455,27 +399,16 @@ button.completed:hover {
   align-items: center;
   justify-content: center;
   z-index: 5;
-  transition: transform 0.3s ease;
 }
 
 .thumbnail-restricted-overlay svg {
-  background: rgba(15, 23, 42, 0.75);
+  background: rgba(15, 23, 42, 0.82);
   border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 50%;
   padding: 6px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
   width: 28px;
   height: 28px;
-  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.25s ease;
   stroke: rgba(255, 255, 255, 0.95);
-}
-
-.restricted-item:hover .thumbnail-restricted-overlay svg {
-  transform: scale(1.1);
-  background: rgba(239, 68, 68, 0.85); /* 호버 시 약간 붉은 계열로 강조하여 잠금 확인 극대화 */
-  border-color: rgba(255, 255, 255, 0.4);
 }
 
 .restricted-badge {
@@ -491,44 +424,19 @@ button.completed:hover {
 }
 
 .restricted-item {
-  opacity: 0.95;
-  transition: opacity 0.3s ease;
+  opacity: 0.9;
 }
 
-.restricted-item .playlist-thumbnail,
-.restricted-item .channel-thumbnail,
-.restricted-item .shorts-thumbnail {
-  filter: brightness(0.95) contrast(1); /* 썸네일이 어두워지지 않고 자연스럽게 표시되도록 필터 완화 */
-  transition: filter 0.3s ease;
-}
-
-.restricted-item:hover {
-  opacity: 1;
-  transform: translateX(4px) !important;
-  box-shadow: 0 4px 20px rgba(59, 130, 246, 0.1) !important;
-}
-
-.restricted-item:hover .playlist-thumbnail,
-.restricted-item:hover .channel-thumbnail,
-.restricted-item:hover .shorts-thumbnail {
-  filter: brightness(1) contrast(1);
-}
-
-/* 비활성화된 다운로드 버튼 */
 button.disabled-restricted {
-  background-color: rgba(100, 116, 139, 0.15) !important;
-  border: 1px solid rgba(100, 116, 139, 0.25) !important;
-  color: #64748b !important;
+  background-color: var(--disabled-bg) !important;
+  border: 1px solid var(--disabled-border) !important;
+  color: var(--disabled-color) !important;
   cursor: not-allowed !important;
   transform: none !important;
   opacity: 0.7;
 }
 
-button.disabled-restricted:hover {
-  background-color: rgba(100, 116, 139, 0.15) !important;
-}
-
-/* ─── 영상 정보 영역 ──────────────────────────────────────────── */
+/* ─── 영상 정보 및 버튼 ──────────────────────────────────────── */
 .playlist-video-info {
   flex: 1;
   min-width: 0;
@@ -541,7 +449,6 @@ button.disabled-restricted:hover {
   font-size: 0.95rem;
   font-weight: 600;
   color: var(--text-color);
-  /* 긴 제목은 말줄임표 처리 */
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -552,7 +459,6 @@ button.disabled-restricted:hover {
   color: var(--text-secondary);
 }
 
-/* ─── 다운로드 버튼 그룹 ──────────────────────────────────────── */
 .playlist-download-buttons {
   display: flex;
   gap: 0.5rem;
@@ -564,21 +470,27 @@ button.disabled-restricted:hover {
   padding: 0.4rem 1rem;
   font-size: 0.8rem;
   border-radius: 8px;
+  font-variant-numeric: tabular-nums;
 }
 
-/* ─── 반응형: 작은 화면에서 썸네일 숨기고 세로 정렬 ────────────── */
 @media (max-width: 640px) {
   .playlist-video-item {
     flex-direction: column;
     align-items: flex-start;
   }
 
-  .playlist-thumbnail-wrapper,
-  .playlist-thumbnail {
+  .playlist-thumbnail-wrapper {
     width: 100%;
     min-width: 100%;
     height: auto;
     aspect-ratio: 16/9;
+  }
+
+  .shorts-thumbnail-wrapper {
+    width: 100%;
+    min-width: 100%;
+    height: auto;
+    aspect-ratio: 9/16;
   }
 
   .playlist-video-title {
@@ -595,315 +507,7 @@ button.disabled-restricted:hover {
   }
 }
 
-/* ═══════════════════════════════════════════════════════════════
-   쇼트(Shorts) 뷰 스타일
-   - PlaylistView와 동일한 UI 패턴, 별도 CSS 클래스 사용
-   ═══════════════════════════════════════════════════════════════ */
-
-/* ─── 쇼트 전체 영역 ──────────────────────────────────────────── */
-.shorts-view {
-  margin-top: 1.5rem;
-  animation: fadeIn 0.5s ease;
-}
-
-/* ─── 쇼트 헤더 (채널명 + 영상 개수) ──────────────────────────── */
-.shorts-header {
-  display: flex;
-  align-items: baseline;
-  gap: 1rem;
-  margin-bottom: 1.5rem;
-  flex-wrap: wrap;
-}
-
-.shorts-title {
-  font-size: 1.3rem;
-  font-weight: 700;
-  color: var(--text-color);
-  background: linear-gradient(to right, #f59e0b, #ef4444);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-
-.shorts-count {
-  font-size: 0.9rem;
-  color: var(--text-secondary);
-  background: rgba(148, 163, 184, 0.15);
-  padding: 0.2rem 0.8rem;
-  border-radius: 9999px;
-}
-
-/* ─── 쇼트 목록 (스크롤 가능) ─────────────────────────────────── */
-.shorts-videos {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  max-height: 70vh;
-  overflow-y: auto;
-  padding-right: 0.5rem;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(148, 163, 184, 0.3) transparent;
-}
-
-.shorts-videos::-webkit-scrollbar {
-  width: 6px;
-}
-
-.shorts-videos::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.shorts-videos::-webkit-scrollbar-thumb {
-  background: rgba(148, 163, 184, 0.3);
-  border-radius: 3px;
-}
-
-/* ─── 개별 쇼트 카드 ──────────────────────────────────────────── */
-.shorts-video-item {
-  display: flex;
-  gap: 1rem;
-  padding: 0.75rem !important;
-  border-radius: 12px !important;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
-  align-items: center;
-}
-
-.shorts-video-item:hover {
-  transform: translateX(4px);
-  box-shadow: 0 4px 20px rgba(245, 158, 11, 0.15) !important;
-}
-
-/* ─── 썸네일 ──────────────────────────────────────────────────── */
-.shorts-thumbnail {
-  width: 100px;
-  min-width: 100px;
-  height: 178px;
-  object-fit: cover;
-  border-radius: 8px;
-  background: rgba(15, 23, 42, 0.5);
-}
-
-/* ─── 영상 정보 영역 ──────────────────────────────────────────── */
-.shorts-video-info {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-}
-
-.shorts-video-title {
-  font-size: 0.95rem;
-  font-weight: 600;
-  color: var(--text-color);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.shorts-video-duration {
-  font-size: 0.8rem;
-  color: var(--text-secondary);
-}
-
-/* ─── 다운로드 버튼 그룹 ──────────────────────────────────────── */
-.shorts-download-buttons {
-  display: flex;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-  margin-top: 0.25rem;
-}
-
-.shorts-download-buttons button {
-  padding: 0.4rem 1rem;
-  font-size: 0.8rem;
-  border-radius: 8px;
-}
-
-/* ─── 반응형: 작은 화면에서 세로 정렬 ──────────────────────────── */
-@media (max-width: 640px) {
-  .shorts-video-item {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
-  .shorts-thumbnail-wrapper,
-  .shorts-thumbnail {
-    width: 100%;
-    min-width: 100%;
-    height: auto;
-    aspect-ratio: 9/16;
-  }
-
-  .shorts-video-title {
-    white-space: normal;
-  }
-
-  .shorts-download-buttons {
-    width: 100%;
-  }
-
-  .shorts-download-buttons button {
-    flex: 1;
-    justify-content: center;
-  }
-}
-
-/* ═══════════════════════════════════════════════════════════════
-   채널 영상(Channel Videos) 뷰 스타일
-   - PlaylistView, ShortsView와 동일한 UI 패턴, 별도 CSS 클래스 사용
-   ═══════════════════════════════════════════════════════════════ */
-
-/* ─── 채널 전체 영역 ──────────────────────────────────────────── */
-.channel-view {
-  margin-top: 1.5rem;
-  animation: fadeIn 0.5s ease;
-}
-
-/* ─── 채널 헤더 (채널명 + 영상 개수) ──────────────────────────── */
-.channel-header {
-  display: flex;
-  align-items: baseline;
-  gap: 1rem;
-  margin-bottom: 1.5rem;
-  flex-wrap: wrap;
-}
-
-.channel-title {
-  font-size: 1.3rem;
-  font-weight: 700;
-  color: var(--text-color);
-  background: linear-gradient(to right, #10b981, #3b82f6);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-
-.channel-count {
-  font-size: 0.9rem;
-  color: var(--text-secondary);
-  background: rgba(148, 163, 184, 0.15);
-  padding: 0.2rem 0.8rem;
-  border-radius: 9999px;
-}
-
-/* ─── 영상 목록 (스크롤 가능) ─────────────────────────────────── */
-.channel-videos {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  max-height: 70vh;
-  overflow-y: auto;
-  padding-right: 0.5rem;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(148, 163, 184, 0.3) transparent;
-}
-
-.channel-videos::-webkit-scrollbar {
-  width: 6px;
-}
-
-.channel-videos::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.channel-videos::-webkit-scrollbar-thumb {
-  background: rgba(148, 163, 184, 0.3);
-  border-radius: 3px;
-}
-
-/* ─── 개별 영상 카드 ──────────────────────────────────────────── */
-.channel-video-item {
-  display: flex;
-  gap: 1rem;
-  padding: 0.75rem !important;
-  border-radius: 12px !important;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
-  align-items: center;
-}
-
-.channel-video-item:hover {
-  transform: translateX(4px);
-  box-shadow: 0 4px 20px rgba(16, 185, 129, 0.15) !important;
-}
-
-/* ─── 썸네일 ──────────────────────────────────────────────────── */
-.channel-thumbnail {
-  width: 160px;
-  min-width: 160px;
-  height: 90px;
-  object-fit: cover;
-  border-radius: 8px;
-  background: rgba(15, 23, 42, 0.5);
-}
-
-/* ─── 영상 정보 영역 ──────────────────────────────────────────── */
-.channel-video-info {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-}
-
-.channel-video-title {
-  font-size: 0.95rem;
-  font-weight: 600;
-  color: var(--text-color);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.channel-video-duration {
-  font-size: 0.8rem;
-  color: var(--text-secondary);
-}
-
-/* ─── 다운로드 버튼 그룹 ──────────────────────────────────────── */
-.channel-download-buttons {
-  display: flex;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-  margin-top: 0.25rem;
-}
-
-.channel-download-buttons button {
-  padding: 0.4rem 1rem;
-  font-size: 0.8rem;
-  border-radius: 8px;
-}
-
-/* ─── 반응형: 작은 화면에서 썸네일 숨기고 세로 정렬 ────────────── */
-@media (max-width: 640px) {
-  .channel-video-item {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
-  .playlist-thumbnail-wrapper,
-  .channel-thumbnail {
-    width: 100%;
-    min-width: 100%;
-    height: auto;
-    aspect-ratio: 16/9;
-  }
-
-  .channel-video-title {
-    white-space: normal;
-  }
-
-  .channel-download-buttons {
-    width: 100%;
-  }
-
-  .channel-download-buttons button {
-    flex: 1;
-    justify-content: center;
-  }
-}
-
-/* ─── 테마 헤더 및 스위처 (Segmented Control) ───────────────── */
+/* ─── 테마 헤더 및 스위처 ────────────────────────────────────── */
 .theme-header {
   display: flex;
   justify-content: flex-end;
@@ -919,11 +523,8 @@ button.disabled-restricted:hover {
   border: 1px solid var(--glass-border);
   border-radius: 9999px;
   padding: 3px;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
   gap: 2px;
   z-index: 50;
-  transition: all 0.3s ease;
 }
 
 .light-theme .theme-selector-container {
@@ -943,7 +544,6 @@ button.disabled-restricted:hover {
   display: flex;
   align-items: center;
   gap: 0.3rem;
-  transition: all 0.2s ease;
 }
 
 .theme-btn:hover {
@@ -959,10 +559,6 @@ button.disabled-restricted:hover {
   box-shadow: 0 2px 8px rgba(37, 99, 235, 0.25);
 }
 
-.dark-theme .theme-btn.active {
-  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.4);
-}
-
 @media (max-width: 640px) {
   .theme-header {
     justify-content: center;
@@ -972,7 +568,7 @@ button.disabled-restricted:hover {
   }
 }
 
-/* ─── 페이지네이션 (Pagination) ────────────────────────────── */
+/* ─── 페이지네이션 ───────────────────────────────────────────── */
 .pagination-container {
   display: flex;
   justify-content: center;
@@ -980,28 +576,20 @@ button.disabled-restricted:hover {
   gap: 1.5rem;
   margin-top: 2rem;
   padding: 0.6rem 1.2rem;
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--card-bg);
   border: 1px solid var(--glass-border);
   border-radius: 9999px;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
   width: fit-content;
   margin-left: auto;
   margin-right: auto;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-  transition: all 0.3s ease;
-}
-
-.light-theme .pagination-container {
-  background: rgba(15, 23, 42, 0.02);
 }
 
 .pagination-info {
   font-size: 0.9rem;
   font-weight: 500;
   color: var(--text-color);
-  opacity: 0.8;
-  letter-spacing: -0.01em;
+  opacity: 0.85;
+  font-variant-numeric: tabular-nums;
 }
 
 .pagination-btn {
@@ -1013,11 +601,6 @@ button.disabled-restricted:hover {
   font-size: 0.85rem;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  outline: none;
 }
 
 .light-theme .pagination-btn {
@@ -1029,16 +612,10 @@ button.disabled-restricted:hover {
   color: white;
   border-color: var(--accent-color);
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);
-}
-
-.dark-theme .pagination-btn:hover:not(:disabled) {
-  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
 }
 
 .pagination-btn:disabled {
   opacity: 0.35;
   cursor: not-allowed;
   transform: none;
-  box-shadow: none;
 }

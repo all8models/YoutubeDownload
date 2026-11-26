@@ -5,6 +5,7 @@ import { trace, SpanStatusCode, metrics } from '@opentelemetry/api';
 import {
   cleanupOldTempFiles,
   createUniqueTempPath,
+  prepareCachedInfoJsonFile,
   removeTempFileArtifacts,
   createStreamingFileResponse,
   classifyDownloadError,
@@ -23,15 +24,18 @@ const downloadDuration = meter.createHistogram('download_duration_seconds', {
 
 /**
  * MP4 다운로드 공통 처리 핸들러 (GET / POST 공용)
+ * - /api/info 캐시(rawInfoJsonCache) 적중 시 --load-info-json으로 YouTube 재추출(2.5~3.5초) 생략
+ * - Docker tmpfs(/app/tmp) 메모리 디스크 위에서 8-스레드 병렬 조각 수신 및 초고속 무손실 Muxing(+faststart)
+ * - 클라이언트 연결 취소(request.signal) 시 실행 중인 yt-dlp/ffmpeg 즉시 회수
  */
 async function handleMp4Download(request, rawUrl, rawQuality, method) {
   const startTime = process.hrtime();
   let tempPath;
+  let infoJsonPath;
   const spanName = `api-download-mp4-${method.toLowerCase()}`;
 
   return tracer.startActiveSpan(spanName, async (span) => {
     try {
-      // 오래된 임시 파일 비동기 정리 실행 (10분 쓰로틀링)
       cleanupOldTempFiles().catch((err) =>
         console.error('Failed to cleanup old temp files:', err)
       );
@@ -46,7 +50,6 @@ async function handleMp4Download(request, rawUrl, rawQuality, method) {
       const url = urlValidation.url;
 
       const parsedQuality = parseInt(String(rawQuality || '720'), 10);
-      // 지원하는 화질만 허용, 그 외는 720p로 기본 설정
       const supportedQualities = [720, 1080];
       const targetQuality = supportedQualities.includes(parsedQuality) ? parsedQuality : 720;
 
@@ -54,26 +57,40 @@ async function handleMp4Download(request, rawUrl, rawQuality, method) {
       span.setAttribute('download.quality', targetQuality);
       span.setAttribute('download.url', url);
 
-      // yt-dlp format 지정: MP4 호환 스트림(avc1+m4a)을 우선 매칭하여 ffmpeg 재인코딩 없이 초고속 Muxing
+      // MP4 호환 스트림(avc1+m4a) 우선 매칭으로 재인코딩 없이 초고속 컨테이너 병합(Muxing)
       const format = `bestvideo[ext=mp4][height<=${targetQuality}]+bestaudio[ext=m4a]/bestvideo[height<=${targetQuality}]+bestaudio/best[height<=${targetQuality}]`;
 
-      // UUID 기반 고유 임시 파일 경로 생성 (동시 다운로드 충돌 원천 차단)
       tempPath = createUniqueTempPath('mp4');
+      infoJsonPath = await prepareCachedInfoJsonFile(url);
 
       const ytdlFlags = {
         format,
         output: tempPath,
         noWarnings: true,
         noPlaylist: true,
-        mergeOutputFormat: 'mp4', // 결과물을 MP4로 병합
+        noPart: true,
+        concurrentFragments: 8,
+        mergeOutputFormat: 'mp4',
+        postprocessorArgs: 'ffmpeg:-threads 0 -movflags +faststart',
       };
       if (ffmpegBinary) {
         ytdlFlags.ffmpegLocation = ffmpegBinary;
       }
 
-      await ytdl(url, ytdlFlags);
+      try {
+        await ytdl(url, ytdlFlags, {
+          pool: 'download',
+          signal: request.signal,
+          infoJsonPath: infoJsonPath || undefined,
+        });
+      } finally {
+        if (infoJsonPath) {
+          await removeTempFileArtifacts(infoJsonPath);
+          infoJsonPath = null;
+        }
+      }
 
-      if (!fs.existsSync(tempPath)) {
+      if (!fs.existsSync(/*turbopackIgnore: true*/ tempPath)) {
         throw new Error('File was not created');
       }
 
@@ -92,7 +109,9 @@ async function handleMp4Download(request, rawUrl, rawQuality, method) {
 
       return response;
     } catch (error) {
-      console.error('MP4 download error:', error);
+      if (error.name !== 'AbortError') {
+        console.error('MP4 download error:', error);
+      }
       span.recordException(error);
       span.setStatus({ code: SpanStatusCode.ERROR, message: error.message });
 
@@ -100,8 +119,10 @@ async function handleMp4Download(request, rawUrl, rawQuality, method) {
       const duration = diff[0] + diff[1] / 1e9;
       downloadDuration.record(duration, { format: 'mp4', method, status: 'failed' });
 
-      // 실패 시 임시 파일(존재한다면) 클린업 시도
-      await removeTempFileArtifacts(tempPath);
+      await Promise.allSettled([
+        removeTempFileArtifacts(tempPath),
+        removeTempFileArtifacts(infoJsonPath),
+      ]);
 
       const { errorMessage, statusCode } = classifyDownloadError(
         error,
@@ -114,15 +135,6 @@ async function handleMp4Download(request, rawUrl, rawQuality, method) {
   });
 }
 
-/**
- * GET /api/download/mp4?url=VIDEO_URL&quality=720
- * 
- * YouTube 영상을 MP4 포맷으로 다운로드합니다.
- * yt-dlp가 영상 스트림 + 오디오 스트림을 자동으로 병합(muxing)하여
- * 하나의 MP4 파일로 제공합니다.
- * 
- * quality 파라미터: 720 (기본값) 또는 1080
- */
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
   return handleMp4Download(
@@ -133,10 +145,6 @@ export async function GET(request) {
   );
 }
 
-/**
- * POST /api/download/mp4
- * JSON body: { url, quality }
- */
 export async function POST(request) {
   let body = {};
   try {
@@ -146,5 +154,3 @@ export async function POST(request) {
   }
   return handleMp4Download(request, body.url, body.quality, 'POST');
 }
-
-

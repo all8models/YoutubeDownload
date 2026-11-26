@@ -1,11 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useCallback, memo } from 'react';
 import DownloadButton from './DownloadButton';
 import {
   saveResponseStream,
   prepareDirectoryTarget,
   triggerNativeBrowserDownload,
+  enqueueClientDownload,
 } from '../lib/fileDownload';
 
 /**
@@ -27,128 +28,239 @@ async function fetchWithRetry(url, options = {}, retries = 1) {
 }
 
 /**
- * 범용 비디오 목록 뷰 컴포넌트 (VideoListView)
- * - 기존의 PlaylistView, ShortsView, ChannelVideosView의 중복 코드를 완벽히 통합한 컴포넌트입니다.
- * - 리스트의 제목, 개수, 영상 배열을 받아서 페이지네이션 및 개별 다운로드 버튼 UI를 렌더링합니다.
- * 
- * @param {Object} props
- * @param {string} props.title - 목록의 상단에 표시될 제목 (예: 채널명, 재생목록명)
- * @param {number} props.count - 목록에 포함된 전체 영상 개수
- * @param {Array} props.videos - 화면에 표시할 영상 객체들의 배열
- * @param {string} props.listType - 컴포넌트의 타입 라벨 (예: 'video', 'short'). 단수형으로 입력합니다.
- * @param {FileSystemDirectoryHandle} [props.downloadDirHandle] - 사용자가 선택한 로컬 폴더 핸들 (없으면 브라우저 기본 다운로드 수행)
+ * 초(seconds) 단위의 재생 시간을 "M:SS" 또는 "H:MM:SS" 형식으로 변환합니다.
  */
-export default function VideoListView({ title, count, videos, listType = 'video', downloadDirHandle }) {
-  // 개별 영상별 다운로드 진행 상태를 추적하기 위한 Map 객체
-  // 키 구조: `${videoUrl}-${type}-${quality}`
-  const [loadingMap, setLoadingMap] = useState({});
-  const [completedMap, setCompletedMap] = useState({});
-  
-  // 에러 메시지 상태 관리
+function formatDuration(seconds) {
+  if (!seconds) return null;
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = String(seconds % 60).padStart(2, '0');
+
+  if (h > 0) {
+    return `${h}:${String(m).padStart(2, '0')}:${s}`;
+  }
+  return `${m}:${s}`;
+}
+
+/**
+ * 개별 영상 카드 컴포넌트 (React.memo 적용)
+ * - 다른 영상의 다운로드 진행률(%)이 갱신될 때 나머지 19개 카드의 불필요한 리렌더링을 원천 차단합니다.
+ */
+const VideoCardItem = memo(function VideoCardItem({
+  video,
+  isShortsList,
+  mp3Task,
+  mp4720Task,
+  mp41080Task,
+  onDownload,
+}) {
+  const isRestricted = video.accessible === false;
+
+  const handleThumbError = (e) => {
+    if (video.thumbnailFallback && e.currentTarget.src !== video.thumbnailFallback) {
+      e.currentTarget.src = video.thumbnailFallback;
+    }
+  };
+
+  return (
+    <div
+      className={`playlist-video-item video-card-surface ${
+        isShortsList ? 'shorts-card-surface' : ''
+      } ${isRestricted ? 'restricted-item' : ''}`}
+    >
+      <div className={isShortsList ? 'shorts-thumbnail-wrapper' : 'playlist-thumbnail-wrapper'}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          className={isShortsList ? 'shorts-thumbnail' : 'playlist-thumbnail'}
+          src={video.thumbnail}
+          alt={video.title}
+          loading="lazy"
+          decoding="async"
+          onError={handleThumbError}
+        />
+
+        {isRestricted && (
+          <div className="thumbnail-restricted-overlay" title="멤버십 전용 또는 비공개 콘텐츠">
+            <svg
+              width="24"
+              height="24"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="white"
+              strokeWidth="2"
+            >
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+              <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+            </svg>
+          </div>
+        )}
+      </div>
+
+      <div className="playlist-video-info">
+        <h3 className="playlist-video-title">
+          {video.title}
+          {isRestricted && <span className="restricted-badge">다운로드 불가</span>}
+        </h3>
+
+        {video.duration && !isRestricted && (
+          <p className="playlist-video-duration">{formatDuration(video.duration)}</p>
+        )}
+
+        <div className="playlist-download-buttons">
+          <DownloadButton
+            onClick={() => onDownload(video.url, video.title, 'mp3', 720)}
+            isQueued={mp3Task?.phase === 'queued'}
+            isLoading={mp3Task?.phase === 'loading'}
+            isCompleted={mp3Task?.phase === 'done'}
+            statusText={mp3Task?.text}
+            disabled={isRestricted}
+            label="MP3"
+          />
+          <DownloadButton
+            onClick={() => onDownload(video.url, video.title, 'mp4', 720)}
+            isQueued={mp4720Task?.phase === 'queued'}
+            isLoading={mp4720Task?.phase === 'loading'}
+            isCompleted={mp4720Task?.phase === 'done'}
+            statusText={mp4720Task?.text}
+            disabled={isRestricted}
+            label="720p"
+          />
+          <DownloadButton
+            onClick={() => onDownload(video.url, video.title, 'mp4', 1080)}
+            isQueued={mp41080Task?.phase === 'queued'}
+            isLoading={mp41080Task?.phase === 'loading'}
+            isCompleted={mp41080Task?.phase === 'done'}
+            statusText={mp41080Task?.text}
+            disabled={isRestricted}
+            label="1080p"
+          />
+        </div>
+      </div>
+    </div>
+  );
+});
+
+/**
+ * 범용 비디오 목록 뷰 컴포넌트 (VideoListView)
+ */
+export default function VideoListView({
+  title,
+  count,
+  videos,
+  listType = 'video',
+  downloadDirHandle,
+}) {
+  // 단일 상태 맵으로 대기/진행률/완료 상태를 통합 관리하여 상태 업데이트 횟수 최소화
+  // 값 구조: { phase: 'queued' | 'loading' | 'done', text?: string }
+  const [taskMap, setTaskMap] = useState({});
   const [error, setError] = useState('');
-  
-  // 현재 페이지 번호 상태 관리 (기본 1페이지)
   const [currentPage, setCurrentPage] = useState(1);
   const ITEMS_PER_PAGE = 20;
 
-  /**
-   * 개별 영상 다운로드를 처리하는 비동기 함수입니다.
-   * 
-   * @param {string} videoUrl - 다운로드할 YouTube 영상 원본 URL
-   * @param {string} videoTitle - 파일명으로 사용될 원본 영상 제목
-   * @param {'mp3'|'mp4'} type - 다운로드 확장자 타입
-   * @param {number} [quality=720] - MP4 다운로드 시 적용될 화질 (720 또는 1080)
-   */
-  const downloadVideo = async (videoUrl, videoTitle, type, quality = 720) => {
-    // 다운로드 버튼의 로딩 상태를 독립적으로 제어하기 위해 고유 키 생성
-    const loadKey = `${videoUrl}-${type}-${quality}`;
-    setLoadingMap((prev) => ({ ...prev, [loadKey]: true }));
-    setError('');
+  const updateTask = useCallback((key, nextValue) => {
+    setTaskMap((prev) => {
+      const curr = prev[key];
+      if (
+        curr &&
+        nextValue &&
+        curr.phase === nextValue.phase &&
+        curr.text === nextValue.text
+      ) {
+        return prev;
+      }
+      if (!nextValue) {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      }
+      return { ...prev, [key]: nextValue };
+    });
+  }, []);
 
-    let endpoint;
-    // 다운로드 타입에 따라 API 엔드포인트를 동적으로 분기합니다.
-    if (type === 'mp3') {
-      // bestaudio: yt-dlp가 최적의 오디오 스트림을 자동 선택합니다.
-      endpoint = `/api/download?url=${encodeURIComponent(videoUrl)}&format_id=bestaudio`;
-    } else {
-      endpoint = `/api/download/mp4?url=${encodeURIComponent(videoUrl)}&quality=${quality}`;
-    }
+  const downloadVideo = useCallback(
+    async (videoUrl, videoTitle, type, quality = 720) => {
+      const loadKey = `${videoUrl}-${type}-${quality}`;
+      setError('');
 
-    // 파일 시스템 저장 시 문제를 일으킬 수 있는 특수문자를 하이픈(-)으로 치환합니다.
-    const safeTitle = (videoTitle || listType).replace(/[/\\?%*:|"<>]/g, '-');
-    const ext = type === 'mp3' ? '.mp3' : '.mp4';
-    const targetFilename = `${safeTitle}${ext}`;
+      const endpoint =
+        type === 'mp3'
+          ? `/api/download?url=${encodeURIComponent(videoUrl)}&format_id=bestaudio`
+          : `/api/download/mp4?url=${encodeURIComponent(videoUrl)}&quality=${quality}`;
 
-    try {
-      // 1. 서버 변환 대기(5초 이상) 전에 사용자 클릭 제스처가 살아있을 때 폴더 권한 및 중복 파일명 확인
-      const { validDirHandle, finalName } = await prepareDirectoryTarget(
-        targetFilename,
-        downloadDirHandle
-      );
+      const safeTitle = (videoTitle || listType).replace(/[/\\?%*:|"<>]/g, '-');
+      const ext = type === 'mp3' ? '.mp3' : '.mp4';
+      const targetFilename = `${safeTitle}${ext}`;
 
-      // 2. 다운로드 스트림 요청 (Keep-Alive 끊김 대비 1회 자동 재시도)
-      let res;
       try {
-        res = await fetchWithRetry(endpoint, { method: 'GET' }, 1);
-      } catch (fetchErr) {
-        // fetch 자체가 브라우저 네트워크/확장프로그램 등에 의해 중단된 경우 네이티브 다운로드로 폴백
-        console.warn('Fetch stream failed, triggering native browser download:', fetchErr);
-        triggerNativeBrowserDownload(endpoint, targetFilename);
-        setCompletedMap((prev) => ({ ...prev, [loadKey]: true }));
-        return;
+        // 1. 사용자 클릭 제스처 활성 시점에 폴더 권한 및 중복 파일명 선행 확정
+        const { validDirHandle, finalName } = await prepareDirectoryTarget(
+          targetFilename,
+          downloadDirHandle
+        );
+
+        // 2. 클라이언트 동시성 제한 큐(최대 3개 병렬)에 작업 등록
+        const { queued, promise } = enqueueClientDownload(
+          async () => {
+            updateTask(loadKey, {
+              phase: 'loading',
+              text: type === 'mp3' ? '스트림 연결...' : '병합중...',
+            });
+
+            let res;
+            try {
+              res = await fetchWithRetry(endpoint, { method: 'GET' }, 1);
+            } catch (fetchErr) {
+              console.warn('Fetch stream failed, triggering native browser download:', fetchErr);
+              triggerNativeBrowserDownload(endpoint, targetFilename);
+              updateTask(loadKey, { phase: 'done' });
+              return;
+            }
+
+            if (!res.ok) {
+              const data = await res.json().catch(() => ({ error: 'Download failed' }));
+              throw new Error(data.error || 'Download failed');
+            }
+
+            await saveResponseStream(res, targetFilename, validDirHandle, {
+              preResolvedName: finalName,
+              fallbackUrl: endpoint,
+              onProgress: (progressText) => {
+                updateTask(loadKey, { phase: 'loading', text: progressText });
+              },
+            });
+
+            updateTask(loadKey, { phase: 'done' });
+          },
+          () => {
+            updateTask(loadKey, {
+              phase: 'loading',
+              text: type === 'mp3' ? '스트림 연결...' : '병합중...',
+            });
+          }
+        );
+
+        if (queued) {
+          updateTask(loadKey, { phase: 'queued' });
+        }
+
+        await promise;
+      } catch (err) {
+        updateTask(loadKey, null);
+        setError(err.message);
       }
+    },
+    [downloadDirHandle, listType, updateTask]
+  );
 
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({ error: 'Download failed' }));
-        throw new Error(data.error || 'Download failed');
-      }
-
-      // 3. 제로 버퍼 다이렉트 스트리밍 저장 실행 (RAM 적재 없이 즉시 디스크 파이핑)
-      await saveResponseStream(res, targetFilename, validDirHandle, {
-        preResolvedName: finalName,
-        fallbackUrl: endpoint,
-      });
-      
-      // 성공적으로 저장되면 해당 버튼을 완료(V) 상태로 변경
-      setCompletedMap((prev) => ({ ...prev, [loadKey]: true }));
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      // 통신 완료 후 로딩 상태 해제
-      setLoadingMap((prev) => ({ ...prev, [loadKey]: false }));
-    }
-  };
-
-  /**
-   * 초(seconds) 단위의 재생 시간을 "M:SS" 또는 "H:MM:SS" 형식으로 변환하는 유틸리티 함수입니다.
-   */
-  const formatDuration = (seconds) => {
-    if (!seconds) return null;
-    const h = Math.floor(seconds / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    const s = String(seconds % 60).padStart(2, '0');
-    
-    if (h > 0) {
-      return `${h}:${String(m).padStart(2, '0')}:${s}`;
-    }
-    return `${m}:${s}`;
-  };
-
-  // 영상 목록이 유효하지 않은 경우 렌더링을 중단합니다.
   if (!videos || !Array.isArray(videos) || videos.length === 0) return null;
 
-  // 페이지네이션 처리 계산 로직 (목록 크기 변경 시 안전한 범위로 클램핑)
   const totalVideos = videos.length;
   const totalPages = Math.max(1, Math.ceil(totalVideos / ITEMS_PER_PAGE));
   const safeCurrentPage = Math.min(Math.max(1, currentPage), totalPages);
   const startIndex = (safeCurrentPage - 1) * ITEMS_PER_PAGE;
-  // 전체 배열에서 현재 페이지에 해당하는 부분 배열만 잘라내어 렌더링합니다.
   const currentVideos = videos.slice(startIndex, startIndex + ITEMS_PER_PAGE);
   const isShortsList = listType === 'short';
 
-  /**
-   * 페이지 번호를 변경하고 리스트 뷰 상단으로 스무스 스크롤을 수행합니다.
-   */
   const handlePageChange = (page) => {
     setCurrentPage(page);
     const viewElement = document.querySelector('.video-list-view');
@@ -159,85 +271,30 @@ export default function VideoListView({ title, count, videos, listType = 'video'
 
   return (
     <div className="video-list-view playlist-view">
-      {/* 뷰 최상단: 제목과 총 영상 갯수 표시 */}
       <div className="playlist-header">
         <h2 className="playlist-title">{title}</h2>
         <span className="playlist-count">
-          {count} {listType}{count !== 1 ? 's' : ''}
+          {count} {listType}
+          {count !== 1 ? 's' : ''}
         </span>
       </div>
 
       {error && <p className="error-message">{error}</p>}
 
-      {/* 리스트 본문: 영상 카드 목록 렌더링 */}
       <div className="playlist-videos">
-        {currentVideos.map((video) => {
-          // 멤버십 전용 또는 비공개 영상인 경우 UI 비활성화를 위한 플래그
-          const isRestricted = video.accessible === false;
-          
-          return (
-            <div key={video.id} className={`playlist-video-item glass-panel ${isRestricted ? 'restricted-item' : ''}`}>
-              <div className={isShortsList ? 'shorts-thumbnail-wrapper' : 'playlist-thumbnail-wrapper'}>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                   className={isShortsList ? 'shorts-thumbnail' : 'playlist-thumbnail'}
-                   src={video.thumbnail}
-                   alt={video.title}
-                   loading="lazy" // 브라우저 네이티브 지연 로딩을 통한 성능 최적화
-                />
-                
-                {/* 비접근성 영상의 경우 반투명 오버레이와 자물쇠 아이콘 노출 */}
-                {isRestricted && (
-                  <div className="thumbnail-restricted-overlay" title="멤버십 전용 또는 비공개 콘텐츠">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
-                      <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
-                      <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
-                    </svg>
-                  </div>
-                )}
-              </div>
-              
-              <div className="playlist-video-info">
-                <h3 className="playlist-video-title">
-                  {video.title}
-                  {isRestricted && <span className="restricted-badge">다운로드 불가</span>}
-                </h3>
-                
-                {video.duration && !isRestricted && (
-                  <p className="playlist-video-duration">{formatDuration(video.duration)}</p>
-                )}
-                
-                {/* 개별 영상 다운로드 버튼 묶음 */}
-                <div className="playlist-download-buttons">
-                  <DownloadButton
-                    onClick={() => downloadVideo(video.url, video.title, 'mp3')}
-                    isLoading={loadingMap[`${video.url}-mp3-720`]}
-                    isCompleted={completedMap[`${video.url}-mp3-720`]}
-                    disabled={isRestricted}
-                    label="MP3"
-                  />
-                  <DownloadButton
-                    onClick={() => downloadVideo(video.url, video.title, 'mp4', 720)}
-                    isLoading={loadingMap[`${video.url}-mp4-720`]}
-                    isCompleted={completedMap[`${video.url}-mp4-720`]}
-                    disabled={isRestricted}
-                    label="720p"
-                  />
-                  <DownloadButton
-                    onClick={() => downloadVideo(video.url, video.title, 'mp4', 1080)}
-                    isLoading={loadingMap[`${video.url}-mp4-1080`]}
-                    isCompleted={completedMap[`${video.url}-mp4-1080`]}
-                    disabled={isRestricted}
-                    label="1080p"
-                  />
-                </div>
-              </div>
-            </div>
-          );
-        })}
+        {currentVideos.map((video) => (
+          <VideoCardItem
+            key={video.id}
+            video={video}
+            isShortsList={isShortsList}
+            mp3Task={taskMap[`${video.url}-mp3-720`]}
+            mp4720Task={taskMap[`${video.url}-mp4-720`]}
+            mp41080Task={taskMap[`${video.url}-mp4-1080`]}
+            onDownload={downloadVideo}
+          />
+        ))}
       </div>
 
-      {/* 페이지네이션 렌더링 구역 (영상이 21개 이상인 경우에만 표시) */}
       {totalPages > 1 && (
         <div className="pagination-container">
           <button
@@ -256,11 +313,11 @@ export default function VideoListView({ title, count, videos, listType = 'video'
           >
             이전
           </button>
-          
+
           <span className="pagination-info">
             {safeCurrentPage} / {totalPages} 페이지
           </span>
-          
+
           <button
             className="pagination-btn"
             onClick={() => handlePageChange(safeCurrentPage + 1)}

@@ -4,31 +4,19 @@ import {
   fetchMembersOnlyIds,
   mapVideoEntries,
   validateYouTubeUrl,
+  resolveKnownChannelId,
+  rememberChannelIdForUrl,
 } from '../../../lib/youtubeHelpers';
+import { listResponseCache, withSingleflight } from '../../../lib/cache';
 
 const MAX_PLAYLIST_ITEMS = 200;
 
 /**
  * GET /api/playlist?url=PLAYLIST_URL
- * 
- * YouTube 일반 재생목록(Playlist)의 영상 목록을 반환하는 API입니다.
- * yt-dlp의 --flat-playlist 옵션을 사용하여 각 영상의 상세 정보 없이 ID, 제목, 길이만 빠르게 가져옵니다.
- * 
- * @example
- * GET /api/playlist?url=https://www.youtube.com/playlist?list=PL...
- * 
- * @returns {JSON}
- * {
- *   "playlist_title": "My Playlist",
- *   "video_count": 25,
- *   "videos": [
- *     { "id": "dQw4w9WgXcQ", "title": "Video 1", "url": "...", "thumbnail": "...", "duration": 212, "accessible": true },
- *     ...
- *   ]
- * }
+ * YouTube 일반 재생목록(Playlist)의 영상 목록을 반환합니다.
+ * - 인메모리 캐시(3분) + Singleflight + 알려진 채널 ID 병렬 멤버십 조회 적용
  */
 export async function GET(request) {
-  // 1. 요청 URL에서 'url' 쿼리 파라미터 파싱 및 보안 검증
   const { searchParams } = new URL(request.url);
   const rawUrl = searchParams.get('url');
 
@@ -37,41 +25,74 @@ export async function GET(request) {
     return NextResponse.json({ error: validation.error }, { status: 400 });
   }
   const url = validation.url;
+  const cacheKey = `playlist:${url}`;
+
+  const cached = listResponseCache.get(cacheKey);
+  if (cached) {
+    return NextResponse.json(cached, {
+      headers: {
+        'X-Cache': 'HIT',
+        'Cache-Control': 'private, max-age=60, stale-while-revalidate=120',
+      },
+    });
+  }
 
   try {
-    // 2. yt-dlp를 통해 플레이리스트 정보 추출 (초대형 목록으로 인한 DoS 방지를 위해 상한 적용)
-    const info = await ytdl(url, {
-      dumpSingleJson: true,      // 결과를 파싱하기 쉬운 JSON 형태로 반환
-      flatPlaylist: true,        // 재생목록 항목만 빠르게 추출 (상세 정보 생략하여 속도 대폭 향상)
-      playlistEnd: MAX_PLAYLIST_ITEMS,
-      noWarnings: true,
-      extractorArgs: 'youtube:lang=is', // 아이슬란드어(is) 설정으로 원본 언어(영어/한국어 등) 제목을 우선 추출
+    const payload = await withSingleflight(cacheKey, async () => {
+      const doubleCheck = listResponseCache.get(cacheKey);
+      if (doubleCheck) return doubleCheck;
+
+      const knownChannelId = resolveKnownChannelId(url);
+      const preMembersPromise = knownChannelId ? fetchMembersOnlyIds(knownChannelId) : null;
+
+      const info = await ytdl(
+        url,
+        {
+          dumpSingleJson: true,
+          flatPlaylist: true,
+          playlistEnd: MAX_PLAYLIST_ITEMS,
+          noWarnings: true,
+          extractorArgs: 'youtube:lang=is',
+        },
+        { pool: 'meta' }
+      );
+
+      rememberChannelIdForUrl(url, info.channel_id);
+
+      const membersOnlyIds = preMembersPromise
+        ? await preMembersPromise
+        : info.channel_id
+          ? await fetchMembersOnlyIds(info.channel_id)
+          : new Set();
+
+      const videos =
+        Array.isArray(info.entries) && info.entries.length > 0
+          ? mapVideoEntries(info.entries, membersOnlyIds)
+          : info.id
+            ? mapVideoEntries([info], membersOnlyIds)
+            : [];
+
+      const result = {
+        playlist_title: info.title || 'Untitled Playlist',
+        video_count: videos.length,
+        videos,
+      };
+
+      listResponseCache.set(cacheKey, result);
+      return result;
     });
 
-    // 3. 해당 채널의 멤버십 전용 영상 ID 목록 수집 (공통 헬퍼 함수 사용)
-    // 플레이리스트 정보에도 채널 ID가 포함되므로 이를 기반으로 조회합니다.
-    const membersOnlyIds = await fetchMembersOnlyIds(info.channel_id);
-
-    // 4. yt-dlp 결과(entries)를 프론트엔드에서 렌더링하기 좋은 형태로 정제
-    const videos = Array.isArray(info.entries) && info.entries.length > 0
-      ? mapVideoEntries(info.entries, membersOnlyIds)
-      : info.id
-        ? mapVideoEntries([info], membersOnlyIds)
-        : [];
-
-    // 5. 성공적인 응답 반환
-    return NextResponse.json({
-      playlist_title: info.title || 'Untitled Playlist',
-      video_count: videos.length,
-      videos,
+    return NextResponse.json(payload, {
+      headers: {
+        'X-Cache': 'MISS',
+        'Cache-Control': 'private, max-age=60, stale-while-revalidate=120',
+      },
     });
   } catch (error) {
     console.error('Playlist fetch error:', error);
-    // 에러 발생 시 상태 코드 500과 함께 상세 에러 메시지 반환
     return NextResponse.json(
       { error: 'Failed to fetch playlist info. Make sure the URL is a valid YouTube playlist.' },
       { status: 500 }
     );
   }
 }
-
